@@ -81,19 +81,36 @@ def write_git_boundary(work_dir: Path, *, lab_root: Path) -> None:
     git_path.write_text("gitdir: /nonexistent\n")
 
 
-def _with_work_dir(server: dict, work: Path) -> dict:
-    """A copy of an MCP server config with `{work}` in its string args replaced by `work`."""
-    args = server.get("args")
-    if not isinstance(args, list):
-        return dict(server)
-    return server | {"args": [a.replace("{work}", str(work)) if isinstance(a, str) else a for a in args]}
+def _with_placeholders(server: dict, values: dict[str, str]) -> dict:
+    """A copy of an MCP server config with placeholders filled in.
+
+    Each `{name}` from `values` is replaced in the string items of `args`
+    and in the string values of `env`; nothing else is touched, and a server
+    without `args` or `env` gets none.
+    """
+
+    def fill(value):
+        if not isinstance(value, str):
+            return value
+        for name, replacement in values.items():
+            value = value.replace("{" + name + "}", replacement)
+        return value
+
+    out = dict(server)
+    if isinstance(server.get("args"), list):
+        out["args"] = [fill(a) for a in server["args"]]
+    if isinstance(server.get("env"), dict):
+        out["env"] = {key: fill(v) for key, v in server["env"].items()}
+    return out
 
 
 def build_config(lab_root: Path, test: config.Test, p: SimpleNamespace, status_file: Path) -> None:
     """Recreate p.config with the profile's settings, a status line and a trusted cwd.
 
     The profile's mcp.json servers become user-scope `mcpServers` in
-    `.claude.json`, with `{work}` in their args replaced by the work dir.
+    `.claude.json`. In their args and env values, `{work}` becomes the work
+    dir and `{config}` this fresh config dir, so a server can keep its state
+    in a place that every run recreates.
     `p` must be `paths(lab_root, test.id)`, and the profile files must
     parse; otherwise this raises before anything is deleted.
     """
@@ -117,7 +134,8 @@ def build_config(lab_root: Path, test: config.Test, p: SimpleNamespace, status_f
         },
     }
     if servers:
-        state["mcpServers"] = {name: _with_work_dir(server, p.work.resolve()) for name, server in servers.items()}
+        values = {"work": str(p.work.resolve()), "config": str(p.config.resolve())}
+        state["mcpServers"] = {name: _with_placeholders(server, values) for name, server in servers.items()}
     (p.config / ".claude.json").write_text(json.dumps(state, indent=2) + "\n")
     write_git_boundary(p.work, lab_root=lab_root)
 
