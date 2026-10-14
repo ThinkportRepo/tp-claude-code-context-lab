@@ -96,3 +96,23 @@ def load_followups(path: Path) -> list[str]:
 def profile_settings(lab_root: Path, profile: str) -> dict:
     """Return the parsed settings.json of `profile`."""
     return json.loads((_profile_dir(lab_root / "lab", profile) / "settings.json").read_text())
+
+
+def profile_mcp_servers(lab_root: Path, profile: str) -> dict:
+    """Return the user-scope MCP servers of `profile` from its optional mcp.json.
+
+    The file holds `{"mcpServers": {"<name>": {...}, ...}}`; without it the
+    profile has none ({}). Raises ValueError naming the file if it is not
+    valid JSON of that shape.
+    """
+    path = _profile_dir(lab_root / "lab", profile) / "mcp.json"
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except ValueError as exc:
+        raise ValueError(f"{path}: not valid JSON ({exc})") from None
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    if not isinstance(servers, dict) or not all(isinstance(v, dict) for v in servers.values()):
+        raise ValueError(f'{path}: expected {{"mcpServers": {{"<name>": {{...}}, ...}}}}')
+    return servers

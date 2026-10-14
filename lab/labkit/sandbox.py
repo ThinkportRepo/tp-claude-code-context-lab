@@ -81,18 +81,29 @@ def write_git_boundary(work_dir: Path, *, lab_root: Path) -> None:
     git_path.write_text("gitdir: /nonexistent\n")
 
 
+def _with_work_dir(server: dict, work: Path) -> dict:
+    """A copy of an MCP server config with `{work}` in its string args replaced by `work`."""
+    args = server.get("args")
+    if not isinstance(args, list):
+        return dict(server)
+    return server | {"args": [a.replace("{work}", str(work)) if isinstance(a, str) else a for a in args]}
+
+
 def build_config(lab_root: Path, test: config.Test, p: SimpleNamespace, status_file: Path) -> None:
     """Recreate p.config with the profile's settings, a status line and a trusted cwd.
 
-    `p` must be `paths(lab_root, test.id)`; anything else is refused before
-    anything is deleted.
+    The profile's mcp.json servers become user-scope `mcpServers` in
+    `.claude.json`, with `{work}` in their args replaced by the work dir.
+    `p` must be `paths(lab_root, test.id)`, and the profile files must
+    parse; otherwise this raises before anything is deleted.
     """
     expected = paths(lab_root, test.id)
     if (p.config.resolve(), p.work.resolve()) != (expected.config, expected.work):
         raise ValueError(f"refusing to rebuild {p.config}: not the config dir of test {test.id!r}")
+    settings = config.profile_settings(lab_root, test.profile)
+    servers = config.profile_mcp_servers(lab_root, test.profile)
     shutil.rmtree(p.config, ignore_errors=True)
     p.config.mkdir(parents=True)
-    settings = config.profile_settings(lab_root, test.profile)
     settings["statusLine"] = {
         "type": "command",
         "command": f"python3 {shlex.quote(str(STATUSLINE_PY))} --save {shlex.quote(str(status_file))}",
@@ -105,6 +116,8 @@ def build_config(lab_root: Path, test: config.Test, p: SimpleNamespace, status_f
             str(p.work.resolve()): {"hasTrustDialogAccepted": True, "hasCompletedProjectOnboarding": True}
         },
     }
+    if servers:
+        state["mcpServers"] = {name: _with_work_dir(server, p.work.resolve()) for name, server in servers.items()}
     (p.config / ".claude.json").write_text(json.dumps(state, indent=2) + "\n")
     write_git_boundary(p.work, lab_root=lab_root)
 

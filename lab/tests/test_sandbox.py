@@ -223,6 +223,42 @@ class BuildConfig(TempRoot):
                          [".claude.json", "settings.json"])
 
 
+class ProfileMcpServers(TempRoot):
+    """mcp.json servers land in config/.claude.json as user-scope `mcpServers`."""
+
+    def write_mcp(self, text):
+        (self.lab_root / "lab" / "profiles" / "clean" / "mcp.json").write_text(text)
+
+    def build(self):
+        sandbox.build_config(self.lab_root, self.test, self.p, self.p.base / "status.json")
+        return json.loads((self.p.config / ".claude.json").read_text())
+
+    def test_no_mcp_file_no_servers(self):
+        self.assertNotIn("mcpServers", self.build())
+
+    def test_servers_written_with_work_dir_replaced(self):
+        self.write_mcp(json.dumps({"mcpServers": {
+            "filesystem": {"type": "stdio", "command": "npx", "args": ["-y", "fs@1.0.0", "{work}"]},
+            "docs": {"type": "http", "url": "https://example.invalid/mcp"},
+        }}))
+        state = self.build()
+        self.assertEqual(state["mcpServers"], {
+            "filesystem": {"type": "stdio", "command": "npx", "args": ["-y", "fs@1.0.0", str(self.p.work)]},
+            "docs": {"type": "http", "url": "https://example.invalid/mcp"},
+        })
+        self.assertIn(" ", str(self.p.work))  # one argument, even with a space in the path
+        self.assertIn("projects", state)  # the seeded state is kept
+
+    def test_invalid_mcp_file_stops_before_anything_is_deleted(self):
+        self.p.config.mkdir(parents=True)
+        (self.p.config / "keep.txt").write_text("keep")
+        self.write_mcp("{not json")
+        with self.assertRaises(ValueError) as ctx:
+            self.build()
+        self.assertIn("mcp.json", str(ctx.exception))
+        self.assertEqual((self.p.config / "keep.txt").read_text(), "keep")
+
+
 class PluginVersions(TempRoot):
     def test_missing_file_gives_empty_dict(self):
         self.assertEqual(sandbox.plugin_versions(self.p.config), {})
