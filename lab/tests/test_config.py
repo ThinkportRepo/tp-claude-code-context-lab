@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from labkit import config, tokens  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
-PROFILES = ("clean", "superpowers", "dev-stack")
+PROFILES = ("clean", "superpowers", "dev-stack", "dev-messy")
 
 
 class TempLab(unittest.TestCase):
@@ -152,7 +152,7 @@ class Profiles(unittest.TestCase):
         base = settings["clean"]["permissions"]["allow"]
         for name, data in settings.items():
             with self.subTest(profile=name):
-                # The shared base list is identical; only dev-stack appends MCP rules.
+                # The shared base list is identical; dev-stack and dev-messy append MCP rules.
                 self.assertEqual(data["permissions"]["allow"][: len(base)], base)
                 self.assertEqual(data["permissions"]["deny"], ["Bash(cd:*)"])
                 self.assertEqual(set(data), {"enabledPlugins", "permissions"})
@@ -182,6 +182,55 @@ class Profiles(unittest.TestCase):
             config.profile_settings(REPO, "dev-stack")["enabledPlugins"],
             {n + market: True for n in ("superpowers", "frontend-design", "microsoft-docs", "playwright")},
         )
+
+    def test_dev_messy_plugins(self):
+        market = "@claude-plugins-official"
+        skills = (
+            "superpowers", "frontend-design", "code-review", "pr-review-toolkit", "code-simplifier",
+            "feature-dev", "commit-commands", "claude-md-management", "skill-creator", "claude-code-setup",
+        )  # fmt: skip
+        mcp = ("playwright", "microsoft-docs", "chrome-devtools-mcp")
+        enabled = config.profile_settings(REPO, "dev-messy")["enabledPlugins"]
+        self.assertEqual(list(enabled), [n + market for n in skills + mcp])
+        self.assertTrue(all(v is True for v in enabled.values()))
+
+    def test_dev_messy_mcp_servers_are_pinned(self):
+        def npx(*args):
+            return {"type": "stdio", "command": "npx", "args": ["-y", *args]}
+
+        self.assertEqual(config.profile_mcp_servers(REPO, "dev-messy"), {
+            "filesystem": npx("@modelcontextprotocol/server-filesystem@1.0.0", "{work}"),
+            "memory": npx("@modelcontextprotocol/server-memory@1.0.0"),
+            "sequential-thinking": npx("@modelcontextprotocol/server-sequential-thinking@1.0.0"),
+            "everything": npx("@modelcontextprotocol/server-everything@1.0.0"),
+            "context7": npx("@upstash/context7-mcp@4.4.1"),
+            "chrome-devtools": npx("chrome-devtools-mcp@1.10.1"),
+            "playwright": npx("@playwright/mcp@0.0.83"),
+            "playwright-automation": npx("@executeautomation/playwright-mcp-server@1.0.12"),
+            "git": npx("@cyanheads/git-mcp-server@2.15.3"),
+            "desktop-commander": npx("@wonderwhy-er/desktop-commander@0.3.0"),
+            "deepwiki": {"type": "http", "url": "https://mcp.deepwiki.com/mcp"},
+            "microsoft-learn": {"type": "http", "url": "https://learn.microsoft.com/api/mcp"},
+        })  # fmt: skip
+
+    def test_dev_messy_extra_allow_rules_are_its_mcp_servers(self):
+        base = config.profile_settings(REPO, "clean")["permissions"]["allow"]
+        allow = config.profile_settings(REPO, "dev-messy")["permissions"]["allow"]
+        servers = config.profile_mcp_servers(REPO, "dev-messy")
+        self.assertEqual(
+            allow[len(base):],
+            [
+                "mcp__plugin_playwright_playwright",
+                "mcp__plugin_microsoft-docs_microsoft-learn",
+                "mcp__plugin_chrome-devtools-mcp_chrome-devtools",
+                *(f"mcp__{name}" for name in servers),
+            ],
+        )
+
+    def test_other_profiles_have_no_mcp_file(self):
+        for name in ("clean", "superpowers", "dev-stack"):
+            with self.subTest(profile=name):
+                self.assertEqual(config.profile_mcp_servers(REPO, name), {})
 
     def test_profile_settings_unknown_rejected(self):
         with self.assertRaises(ValueError):

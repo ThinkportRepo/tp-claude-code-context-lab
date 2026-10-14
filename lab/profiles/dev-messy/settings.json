@@ -1,0 +1,50 @@
+{
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true,
+    "claude-code-setup@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "microsoft-docs@claude-plugins-official": true,
+    "chrome-devtools-mcp@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "WebFetch",
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(curl:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(pwd)",
+      "Bash(mkdir:*)",
+      "mcp__plugin_playwright_playwright",
+      "mcp__plugin_microsoft-docs_microsoft-learn",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools",
+      "mcp__filesystem",
+      "mcp__memory",
+      "mcp__sequential-thinking",
+      "mcp__everything",
+      "mcp__context7",
+      "mcp__chrome-devtools",
+      "mcp__playwright",
+      "mcp__playwright-automation",
+      "mcp__git",
+      "mcp__desktop-commander",
+      "mcp__deepwiki",
+      "mcp__microsoft-learn"
+    ],
+    "deny": [
+      "Bash(cd:*)"
+    ]
+  }
+}
