@@ -542,10 +542,11 @@ user made without a ruling number follow after them.
   chromium`. When the matrix contains a `dev-stack` test, it warns if
   Google Chrome is not installed.
 - **Why:** the lab never uses Playwright. Only the MCP server of the
-  `playwright` plugin does, and it brings its own library and uses the
-  installed Google Chrome. The installed Chromium was most likely never
-  used, and the command printed a warning because the lab is not a Node
-  project.
+  `playwright` plugin does. It brings its own library, and by default
+  its MCP server is expected to use the installed Google Chrome
+  (assumption, not yet verified by a run that opens the browser). The
+  installed Chromium was therefore most likely never used, and the command
+  printed a warning because the lab is not a Node project.
 - **Cost if wrong:** if the MCP server's default is not Chrome, `dev-stack`
   runs may fail to open a browser until a browser is installed.
 

@@ -193,7 +193,7 @@ class Check(TempDirCase):
         (self.sandbox / ".claude" / "CLAUDE.md").write_text("x")
         self.assertEqual(self.run_check(), ([], []))
 
-    def test_home_claude_dir_ignored(self):
+    def test_home_claude_md_ignored(self):
         sandbox = self.home / "lab" / "sandbox"
         sandbox.mkdir(parents=True)
         (self.home / ".claude").mkdir()

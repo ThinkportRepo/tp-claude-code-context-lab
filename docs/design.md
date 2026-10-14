@@ -184,9 +184,10 @@ Besides Python, `git`, `gh` and `claude`, the `dev-stack` profile needs
 two things on the machine:
 
 - Node.js with `npx`, which starts the MCP servers of its plugins.
-- Google Chrome, for the `playwright` plugin. Its MCP server uses the
-  installed Google Chrome. The lab is not a Node project, so it does not
-  install a browser itself.
+- Google Chrome, for the `playwright` plugin. By default the plugin's
+  MCP server is expected to use the installed Google Chrome (assumption,
+  not yet verified by a run that opens the browser). The lab is not a
+  Node project, so it does not install a browser itself.
 
 Preflight checks `npx`. `lab.py setup` checks for Google Chrome whenever the
 matrix contains a `dev-stack` test, and prints a warning, not an error, if
