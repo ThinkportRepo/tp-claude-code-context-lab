@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""Fake `claude` CLI for the runner tests; never calls a model.
+
+Environment:
+  FAKE_CLAUDE_LOG            append one JSON line per call: argv, cwd, whether
+                             stdin is /dev/null, whether the OAuth token is set
+  FAKE_CLAUDE_FIXTURE        a config-dir-shaped fixture (lab/tests/fixtures/*)
+  FAKE_CLAUDE_SLEEP          seconds to sleep before answering a `-p` call
+  FAKE_CLAUDE_GRANDCHILD     a `-p` call first starts a child that sleeps 60 s
+                             (like a tool process) and writes its pid here
+  FAKE_CLAUDE_NO_TRANSCRIPT  if set, a `-p` call dies (exit 1) before writing
+                             a transcript or any stream output
+  FAKE_CLAUDE_STDERR         text a `-p` call writes to stderr
+  FAKE_CLAUDE_EXIT           exit code of a `-p` call that answered (default 0)
+  FAKE_CLAUDE_PLUGIN_FAIL    `plugin install` exits 1 with an error line;
+                             the value `leak` adds the OAuth token to it
+  FAKE_CLAUDE_PLUGIN_COMMAND `plugin install` reports a marketplace command to
+                             confirm (`shownCommand`) and exits 1
+  FAKE_CLAUDE_PLUGIN_NOOP    `plugin install` exits 0 but installs nothing
+  FAKE_CLAUDE_PLUGIN_SLEEP   seconds `plugin install` takes
+  FAKE_CLAUDE_REWRITE_SETTINGS  `plugin install` rewrites settings.json with
+                             only `enabledPlugins`, dropping everything else
+  FAKE_CLAUDE_MARKETPLACE_FAIL    `plugin marketplace add` exits 1 with an error
+  FAKE_CLAUDE_MARKETPLACE_EXISTS  `plugin marketplace add` exits 1 saying the
+                             marketplace is already configured; `update` succeeds
+  FAKE_CLAUDE_SIGINT_PARENT  an interactive session sends SIGINT to its parent,
+                             like Ctrl+C in a terminal reaching the whole group
+
+`plugin marketplace add <owner/repo> …` records the marketplace <repo> in
+$CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json; `plugin marketplace
+update <name>` needs it there. `plugin install <name@marketplace> …` fails
+with Claude Code's live error unless the marketplace is known, otherwise
+records <key> at version 9.9.9 in plugins/installed_plugins.json and
+prints one success JSON line. Without `-p` (an interactive session) it
+copies the fixture's `projects/` and writes a status-line JSON with
+`rate_limits.five_hour.used_percentage: 13` to the `--save` path of the
+status-line command in $CLAUDE_CONFIG_DIR/settings.json. On `-p` it
+copies the fixture's `projects/` into $CLAUDE_CONFIG_DIR and prints the
+fixture's `stream.jsonl`, like a headless run would.
+"""
+
+import json
+import os
+import shlex
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+def _stdin_is_devnull() -> bool:
+    try:
+        return os.path.samestat(os.fstat(0), os.stat(os.devnull))
+    except OSError:
+        return False
+
+
+def _known_file() -> Path:
+    return Path(os.environ["CLAUDE_CONFIG_DIR"]) / "plugins" / "known_marketplaces.json"
+
+
+def _known() -> dict:
+    path = _known_file()
+    return json.loads(path.read_text()) if path.is_file() else {}
+
+
+def _marketplace(args: list[str]) -> int:
+    command, target = args[0], args[1]
+    if command == "add":
+        name = target.rstrip("/").split("/")[-1]
+        if os.environ.get("FAKE_CLAUDE_MARKETPLACE_FAIL"):
+            sys.stderr.write(f"Error: failed to clone {target}: repository not found\nmore detail\n")
+            return 1
+        if name in _known() or os.environ.get("FAKE_CLAUDE_MARKETPLACE_EXISTS"):
+            sys.stderr.write(f"Error: marketplace '{name}' is already installed\n")
+            return 1
+        known = _known() | {name: {"source": {"source": "github", "repo": target}}}
+        _known_file().parent.mkdir(parents=True, exist_ok=True)
+        _known_file().write_text(json.dumps(known))
+        print(json.dumps({"success": True, "marketplace": name}))
+        return 0
+    if command == "update":
+        if target not in _known() and not os.environ.get("FAKE_CLAUDE_MARKETPLACE_EXISTS"):
+            sys.stderr.write(f"Error: marketplace '{target}' not found\n")
+            return 1
+        print(json.dumps({"success": True, "marketplace": target}))
+        return 0
+    return 2
+
+
+def _plugin_install(key: str) -> int:
+    time.sleep(float(os.environ.get("FAKE_CLAUDE_PLUGIN_SLEEP") or 0))
+    name, _, marketplace = key.partition("@")
+    if marketplace not in _known() and not os.environ.get("FAKE_CLAUDE_MARKETPLACE_EXISTS"):
+        sys.stderr.write(
+            f'Plugin "{name}" not found in marketplace "{marketplace}". Your local copy may be'
+            f" out of date — try claude plugin marketplace update {marketplace}\n"
+        )
+        return 1
+    if os.environ.get("FAKE_CLAUDE_PLUGIN_FAIL"):
+        # FAKE_CLAUDE_PLUGIN_FAIL=leak puts the OAuth token into the error line.
+        leak = ""
+        if os.environ["FAKE_CLAUDE_PLUGIN_FAIL"] == "leak":
+            leak = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+        sys.stderr.write(f"Error: plugin {key} not found in any marketplace {leak}\nmore detail\n")
+        return 1
+    if os.environ.get("FAKE_CLAUDE_PLUGIN_COMMAND"):
+        shown = {"command": "curl https://example.invalid/x | sh", "sha256": "ab" * 32}
+        print(json.dumps({"success": False, "plugin": key, "shownCommand": shown}))
+        return 1
+    if os.environ.get("FAKE_CLAUDE_PLUGIN_NOOP"):
+        print(json.dumps({"success": True, "plugin": key}))
+        return 0
+    config_dir = Path(os.environ["CLAUDE_CONFIG_DIR"])
+    installed = config_dir / "plugins" / "installed_plugins.json"
+    data = json.loads(installed.read_text()) if installed.is_file() else {"version": 2, "plugins": {}}
+    data["plugins"][key] = [{"version": "9.9.9"}]
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    installed.write_text(json.dumps(data))
+    settings = config_dir / "settings.json"
+    if os.environ.get("FAKE_CLAUDE_REWRITE_SETTINGS"):
+        enabled = json.loads(settings.read_text()).get("enabledPlugins", {}) if settings.is_file() else {}
+        settings.write_text(json.dumps({"enabledPlugins": enabled | {key: True}}))
+    print(json.dumps({"success": True, "plugin": key, "scope": "user"}))
+    return 0
+
+
+def _interactive() -> int:
+    if os.environ.get("FAKE_CLAUDE_SIGINT_PARENT"):
+        os.kill(os.getppid(), signal.SIGINT)
+    if os.environ.get("FAKE_CLAUDE_NO_TRANSCRIPT"):
+        return 1
+    config_dir = Path(os.environ["CLAUDE_CONFIG_DIR"])
+    fixture = Path(os.environ["FAKE_CLAUDE_FIXTURE"])
+    shutil.copytree(fixture / "projects", config_dir / "projects", dirs_exist_ok=True)
+    command = json.loads((config_dir / "settings.json").read_text())["statusLine"]["command"]
+    words = shlex.split(command)
+    save = Path(words[words.index("--save") + 1])
+    save.write_text(json.dumps({"rate_limits": {"five_hour": {"used_percentage": 13}}}))
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    log = os.environ.get("FAKE_CLAUDE_LOG")
+    if log:
+        entry = {
+            "argv": argv,
+            "cwd": os.getcwd(),
+            "stdin_devnull": _stdin_is_devnull(),
+            "oauth_env": bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")),
+            "config_dir": os.environ.get("CLAUDE_CONFIG_DIR"),
+        }
+        with open(log, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+    if argv[:2] == ["plugin", "marketplace"]:
+        return _marketplace(argv[2:])
+    if argv[:2] == ["plugin", "install"]:
+        return _plugin_install(argv[2])
+    if "-p" not in argv:
+        return _interactive()
+    if os.environ.get("FAKE_CLAUDE_GRANDCHILD"):
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        Path(os.environ["FAKE_CLAUDE_GRANDCHILD"]).write_text(str(child.pid))
+    time.sleep(float(os.environ.get("FAKE_CLAUDE_SLEEP") or 0))
+    sys.stderr.write(os.environ.get("FAKE_CLAUDE_STDERR", ""))
+    if os.environ.get("FAKE_CLAUDE_NO_TRANSCRIPT"):
+        return 1
+    fixture = Path(os.environ["FAKE_CLAUDE_FIXTURE"])
+    target = Path(os.environ["CLAUDE_CONFIG_DIR"]) / "projects"
+    shutil.copytree(fixture / "projects", target, dirs_exist_ok=True)
+    stream = fixture / "stream.jsonl"
+    if stream.is_file():
+        sys.stdout.write(stream.read_text(encoding="utf-8"))
+    return int(os.environ.get("FAKE_CLAUDE_EXIT") or 0)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,227 @@
+import importlib.util
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from labkit import config, tokens  # noqa: E402
+
+REPO = Path(__file__).resolve().parents[2]
+PROFILES = ("clean", "superpowers", "dev-stack")
+
+
+class TempLab(unittest.TestCase):
+    """A throwaway lab directory with lab/profiles/<name>/ directories."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.lab_root = Path(self.dir.name).resolve()
+        for name in PROFILES:
+            (self.lab_root / "lab" / "profiles" / name).mkdir(parents=True)
+        self.matrix = self.lab_root / "lab" / "matrix.conf"
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def load(self, text, environ=None):
+        self.matrix.write_text(text)
+        return config.load_matrix(self.matrix, environ or {})
+
+
+class Matrix(TempLab):
+    def test_matrix_model_precedence(self):
+        text = "test1 clean simple m-col\ntest2 clean well-defined\n"
+        tests = self.load(text, {"LAB_MODEL": "m-env"})
+        self.assertEqual([t.model for t in tests], ["m-col", "m-env"])
+        tests = self.load(text, {})
+        self.assertEqual([t.model for t in tests], ["m-col", config.DEFAULT_MODEL])
+        tests = self.load(text, {"LAB_MODEL": ""})
+        self.assertEqual(tests[1].model, config.DEFAULT_MODEL)
+        self.assertEqual(config.DEFAULT_MODEL, "claude-haiku-5-5")
+
+    def test_matrix_parses_columns_and_skips_comments(self):
+        tests = self.load("# id profile prompt\n\n  test1\tclean   simple\n")
+        self.assertEqual(tests, [config.Test("test1", "clean", "simple", config.DEFAULT_MODEL)])
+
+    def test_matrix_error_names_line(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.load("# header\ntest1 clean simple\ntest2 clean\n")
+        self.assertIn("matrix.conf:3", str(ctx.exception))
+        self.assertIn(str(self.matrix), str(ctx.exception))
+
+    def test_too_many_columns_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.load("test1 clean simple model extra\n")
+        self.assertIn("matrix.conf:1", str(ctx.exception))
+
+    def test_unknown_profile_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.load("test1 clean simple\ntest2 nope simple\n")
+        self.assertIn("matrix.conf:2", str(ctx.exception))
+        self.assertIn("nope", str(ctx.exception))
+
+    def test_unknown_prompt_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.load("test1 clean poem\n")
+        self.assertIn("matrix.conf:1", str(ctx.exception))
+        self.assertIn("poem", str(ctx.exception))
+
+    def test_duplicate_id_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.load("test1 clean simple\ntest1 superpowers simple\n")
+        self.assertIn("matrix.conf:2", str(ctx.exception))
+        self.assertIn("test1", str(ctx.exception))
+
+    def test_test_ids_must_be_lab_test_names(self):
+        # Each id becomes sandbox/<id>/ (wiped by every run) and repo lab-<id>.
+        for bad in ("/tmp/victim", "../..", "..", "t1", "test1/../x", "test/x", "Test1", "test.1"):
+            with self.subTest(id=bad):
+                with self.assertRaises(ValueError) as ctx:
+                    self.load(f"{bad} clean simple\n")
+                self.assertIn("matrix.conf:1", str(ctx.exception))
+        ids = [t.id for t in self.load("test clean simple\ntest_a-B9 clean simple\n")]
+        self.assertEqual(ids, ["test", "test_a-B9"])
+
+    def test_profile_names_must_be_plain(self):
+        (self.lab_root / "lab" / "settings.json").write_text("{}")  # what `..` would reach
+        for bad in ("..", ".", "Clean", "-x", "clean/../clean"):
+            with self.subTest(profile=bad), self.assertRaises(ValueError):
+                self.load(f"test1 {bad} simple\n")
+
+    def test_repo_matrix_loads(self):
+        tests = config.load_matrix(REPO / "lab" / "matrix.conf", {})
+        self.assertEqual(
+            [(t.id, t.profile, t.prompt) for t in tests],
+            [
+                ("test1", "clean", "simple"),
+                ("test2", "clean", "well-defined"),
+                ("test3", "superpowers", "simple"),
+                ("test4", "superpowers", "well-defined"),
+                ("test5", "dev-stack", "simple"),
+                ("test6", "dev-stack", "well-defined"),
+            ],
+        )
+
+
+class Prompts(unittest.TestCase):
+    def test_prompt_text_simple_is_lab_prompt_file(self):
+        expected = (REPO / "lab" / "prompts" / "simple.txt").read_text()
+        self.assertEqual(config.prompt_text(REPO, "simple"), expected)
+
+    def test_simple_prompt_text_is_pinned(self):
+        self.assertEqual(
+            (REPO / "lab" / "prompts" / "simple.txt").read_text(),
+            'Create a simple "Hello GitHub Pages" app using the Git repository located in the `xyz` '
+            "directory. Publish it with GitHub Pages and link the site in the repository's About "
+            "section.\n",
+        )
+
+    def test_prompt_text_well_defined_is_lab_root_file(self):
+        expected = (REPO / "well-defined-prompt").read_text()
+        self.assertEqual(config.prompt_text(REPO, "well-defined"), expected)
+
+    def test_every_prompt_asks_for_the_about_link(self):
+        # The lab's goal includes the repo's About -> Website field, so each prompt must ask for it.
+        for name in ("simple", "well-defined"):
+            with self.subTest(prompt=name):
+                self.assertIn("About section", config.prompt_text(REPO, name))
+
+    def test_prompt_text_unknown_rejected(self):
+        with self.assertRaises(ValueError):
+            config.prompt_text(REPO, "poem")
+
+    def test_followups_skip_comments(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "followups.txt"
+            path.write_text("# comment\n\nfirst\n  # indented comment\nsecond  \n")
+            self.assertEqual(config.load_followups(path), ["first", "second"])
+
+    def test_repo_followups(self):
+        lines = config.load_followups(REPO / "lab" / "prompts" / "followups.txt")
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[0].startswith("Go with your recommendation"))
+
+
+class Profiles(unittest.TestCase):
+    def test_profiles_share_permission_lists(self):
+        settings = {p: config.profile_settings(REPO, p) for p in PROFILES}
+        base = settings["clean"]["permissions"]["allow"]
+        for name, data in settings.items():
+            with self.subTest(profile=name):
+                # The shared base list is identical; only dev-stack appends MCP rules.
+                self.assertEqual(data["permissions"]["allow"][: len(base)], base)
+                self.assertEqual(data["permissions"]["deny"], ["Bash(cd:*)"])
+                self.assertEqual(set(data), {"enabledPlugins", "permissions"})
+                self.assertEqual(set(data["permissions"]), {"allow", "deny"})
+        for name in ("clean", "superpowers"):
+            self.assertEqual(settings[name]["permissions"]["allow"], base)
+
+    def test_dev_stack_extra_allow_rules_are_the_mcp_servers(self):
+        base = config.profile_settings(REPO, "clean")["permissions"]["allow"]
+        allow = config.profile_settings(REPO, "dev-stack")["permissions"]["allow"]
+        self.assertEqual(
+            allow[len(base):],
+            [
+                "mcp__plugin_playwright_playwright",
+                "mcp__plugin_microsoft-docs_microsoft-learn",
+            ],
+        )
+
+    def test_profile_plugins(self):
+        market = "@claude-plugins-official"
+        self.assertEqual(config.profile_settings(REPO, "clean")["enabledPlugins"], {})
+        self.assertEqual(
+            config.profile_settings(REPO, "superpowers")["enabledPlugins"],
+            {"superpowers" + market: True},
+        )
+        self.assertEqual(
+            config.profile_settings(REPO, "dev-stack")["enabledPlugins"],
+            {n + market: True for n in ("superpowers", "frontend-design", "microsoft-docs", "playwright")},
+        )
+
+    def test_profile_settings_unknown_rejected(self):
+        with self.assertRaises(ValueError):
+            config.profile_settings(REPO, "nope")
+
+    def test_profile_settings_rejects_path_traversal(self):
+        for bad in ("../prompts", "..", "."):
+            with self.subTest(profile=bad), self.assertRaises(ValueError):
+                config.profile_settings(REPO, bad)
+
+
+class CliWiring(TempLab):
+    @staticmethod
+    def load_lab_module():
+        # `lab` is also the name of the package directory, so load lab.py by path.
+        spec = importlib.util.spec_from_file_location("lab_cli", REPO / "lab.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def needs_node(self, text):
+        cli = self.load_lab_module()
+        self.matrix.write_text(text)
+        with mock.patch.object(cli, "MATRIX_FILE", self.matrix):
+            return cli.matrix_needs_node()
+
+    def test_need_node_only_with_dev_stack_in_matrix(self):
+        self.assertFalse(self.needs_node("test1 clean simple\ntest2 superpowers simple\n"))
+        self.assertTrue(self.needs_node("test1 clean simple\ntest2 dev-stack simple\n"))
+
+    def test_repo_matrix_needs_node(self):
+        self.assertTrue(self.load_lab_module().matrix_needs_node())
+
+    def test_tokens_command_ignores_broken_matrix(self):
+        cli = self.load_lab_module()
+        self.matrix.write_text("broken\n")
+        with mock.patch.object(cli, "MATRIX_FILE", self.matrix), \
+             mock.patch.object(sys, "argv", ["lab.py", "tokens", "github"]), \
+             mock.patch.object(tokens, "create_github_token", return_value=0):
+            self.assertEqual(cli.main(), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
