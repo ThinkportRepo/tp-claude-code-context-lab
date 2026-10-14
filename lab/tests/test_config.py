@@ -125,15 +125,19 @@ class Matrix(TempLab):
 
     def test_repo_matrix_loads(self):
         tests = config.load_matrix(REPO / "lab" / "matrix.conf", {})
+        default = config.DEFAULT_MODEL
         self.assertEqual(
-            [(t.id, t.profile, t.prompt) for t in tests],
+            [(t.id, t.profile, t.prompt, t.model, t.effort) for t in tests],
             [
-                ("test1", "clean", "simple"),
-                ("test2", "clean", "well-defined"),
-                ("test3", "superpowers", "simple"),
-                ("test4", "superpowers", "well-defined"),
-                ("test5", "dev-stack", "simple"),
-                ("test6", "dev-stack", "well-defined"),
+                ("test1", "clean", "simple", default, None),
+                ("test2", "clean", "well-defined", default, None),
+                ("test3", "superpowers", "simple", default, None),
+                ("test4", "superpowers", "well-defined", default, None),
+                ("test5", "dev-stack", "simple", default, None),
+                ("test6", "dev-stack", "well-defined", default, None),
+                ("test7", "dev-messy", "simple", default, None),
+                ("test8", "dev-messy", "well-defined", default, None),
+                ("test9", "clean", "simple", "claude-sonnet-5", "medium"),
             ],
         )
 
