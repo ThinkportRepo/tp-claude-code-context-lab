@@ -249,7 +249,8 @@ def run_setup(cfg: dict[str, str]) -> int:
         print(f"Sandbox: {SANDBOX}")
         width = max(len(t.id) for t in tests)
         for t in tests:
-            print(f"  {t.id:<{width}}  {t.profile:<12}  {t.prompt:<12}  {t.model}")
+            effort = f"  {t.effort}" if t.effort else ""
+            print(f"  {t.id:<{width}}  {t.profile:<12}  {t.prompt:<12}  {t.model}{effort}")
         print(limits.limit_line(limits.probe(LAB_ROOT, cfg)))
     except KeyboardInterrupt:
         print("\ninterrupted", file=sys.stderr)

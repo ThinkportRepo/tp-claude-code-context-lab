@@ -617,6 +617,14 @@ class Cli(unittest.TestCase):
         self.assertIn("uses the installed Google Chrome (verified 2026-10-14)", err)
         self.assertNotIn("expected to", err)
 
+    def test_setup_prints_the_effort_of_a_test(self):
+        matrix = "test1 clean simple claude-sonnet-5 medium\ntest2 clean simple\n"
+        (code, out, _), _, _, _ = self.setup_cmd(matrix=matrix)
+        self.assertEqual(code, 0)
+        line1, line2 = (next(l for l in out.splitlines() if l.split()[:1] == [t]) for t in ("test1", "test2"))
+        self.assertEqual(line1.split()[3:], ["claude-sonnet-5", "medium"])
+        self.assertEqual(line2.split()[3:], [config.DEFAULT_MODEL])
+
     def test_setup_prints_the_limit_as_unknown_when_the_probe_fails(self):
         (_, out, _), _, _, _ = self.setup_cmd(probe=None)
         self.assertIn("5-hour limit: unknown", out)

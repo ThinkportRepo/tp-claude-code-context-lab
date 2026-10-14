@@ -35,6 +35,9 @@ class TestResultsFile(unittest.TestCase):
         self.assertEqual(results.FIELDS[results.FIELDS.index("status") + 1], "goal_ok")
         self.assertNotIn("pages_ok", results.FIELDS)
 
+    def test_effort_follows_model(self):
+        self.assertEqual(results.FIELDS[results.FIELDS.index("model") + 1], "effort")
+
     def test_append_rejects_unknown_field(self):
         with self.assertRaises(ValueError):
             results.append(self.path, {"mode": "headless", "bogus": 1})
@@ -138,6 +141,26 @@ class TestSummarize(unittest.TestCase):
         keys = [(g["mode"], g["model"], g["profile"], g["prompt"]) for g in report.summarize(rows)]
         self.assertEqual(keys, sorted(keys))
         self.assertEqual(keys[0], ("headless", "m1", "clean", "simple"))
+
+
+class TestEffort(unittest.TestCase):
+    def test_groups_keep_efforts_apart(self):
+        rows = [row(ctx_start=1), row(effort="medium", ctx_start=2), row(effort="high", ctx_start=3)]
+        self.assertEqual(len(report.summarize(rows)), 3)
+        self.assertEqual(group(rows, effort="medium")["ctx_start"]["median"], 2)
+        self.assertEqual(group(rows, effort="")["ctx_start"]["median"], 1)
+
+    def test_section_heading_shows_the_effort(self):
+        rows = [row(model="claude-sonnet-5", effort="medium"), row(effort="")]
+        lines = report.render(rows).splitlines()
+        self.assertIn("[headless / claude-sonnet-5 / medium]", lines)
+        self.assertIn("[headless / m1]", lines)  # no effort: as before
+
+    def test_starting_points_keep_efforts_apart(self):
+        rows = [row(ctx_start=10), row(effort="max", ctx_start=20)]
+        points = {(p["profile"], p["model"]): p for p in report.starting_points(rows)}
+        self.assertEqual(points[("clean", "m1")]["headless_ctx_start"], 10)
+        self.assertEqual(points[("clean", "m1 / max")]["headless_ctx_start"], 20)
 
 
 class TestStartingPoints(unittest.TestCase):

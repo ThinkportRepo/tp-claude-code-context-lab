@@ -39,17 +39,28 @@ class _RunTimeout(Exception):
     """The run's time budget ran out while (or before) `claude` ran."""
 
 
-def headless_argv(prompt: str, model: str, resume: str | None = None) -> list[str]:
+def _model_flags(model: str, effort: str | None) -> list[str]:
+    """`--model M`, plus `--effort E` only when the test sets an effort."""
+    return ["--model", model, *(["--effort", effort] if effort else [])]
+
+
+def _model_label(test: config.Test) -> str:
+    """The model for progress lines, with the effort if the test sets one."""
+    return f"{test.model}, effort {test.effort}" if test.effort else test.model
+
+
+def headless_argv(prompt: str, model: str, resume: str | None = None, *, effort: str | None = None) -> list[str]:
     """argv of a headless `claude` call with the lab's pinned flags.
 
-    The prompt is not a secret, so it travels in argv; credentials only
-    ever reach `claude` through its environment.
+    `--effort` is passed only when `effort` is set. The prompt is not a
+    secret, so it travels in argv; credentials only ever reach `claude`
+    through its environment.
     """
     argv = ["claude", "-p", prompt]
     if resume:
         argv += ["--resume", resume]
     return argv + [
-        "--model", model, "--permission-mode", "default",
+        *_model_flags(model, effort), "--permission-mode", "default",
         "--output-format", "stream-json", "--verbose",
     ]  # fmt: skip
 
@@ -179,7 +190,7 @@ def _new_row(stamp: str, test: config.Test, mode: str, limit_start: int | None) 
     row = dict.fromkeys(results.FIELDS)
     row |= {
         "timestamp": stamp, "test": test.id, "mode": mode, "model": test.model,
-        "profile": test.profile, "prompt": test.prompt,
+        "effort": test.effort, "profile": test.profile, "prompt": test.prompt,
         "limit_5h_start_pct": limit_start,
     }  # fmt: skip
     return row
@@ -251,7 +262,7 @@ def run_headless(
         with stream.open("wb") as out, stderr.open("wb") as err:
             try:
                 code = _run_claude(
-                    headless_argv(prompt, test.model, resume),
+                    headless_argv(prompt, test.model, resume, effort=test.effort),
                     cwd=p.work, env=env, stdout=out, stderr=err, timeout=remaining,
                 )  # fmt: skip
             except subprocess.TimeoutExpired:
@@ -265,7 +276,7 @@ def run_headless(
         fresh_config(lab_root, test, p, out_dir, env)
         reset_repo(lab_root, test, gh, p)
         followups = config.load_followups(lab_root / FOLLOWUPS_FILE)
-        print(f"{test.id}: turn 1 ({test.model}, profile {test.profile}, prompt {test.prompt})")
+        print(f"{test.id}: turn 1 ({_model_label(test)}, profile {test.profile}, prompt {test.prompt})")
         started = time.monotonic()
         deadline = started + timeout_s
         session = turn(config.prompt_text(lab_root, test.prompt), None, env)
@@ -339,7 +350,7 @@ def run_interactive(
     """Run `test` as an interactive session in this terminal; return its row.
 
     Same reset as headless (fresh config with plugins, empty repo), then
-    `claude <prompt> --model M --permission-mode default` until the human
+    `claude <prompt> --model M [--effort E] --permission-mode default` until the human
     exits. Afterwards: goal check, metrics, row (`mode` interactive).
     `limit_5h_end_pct` comes from the status line the session saved.
     `duration_s` is the session's wall time. Status is `ok` if the goal is met,
@@ -359,9 +370,9 @@ def run_interactive(
         fresh_config(lab_root, test, p, out_dir, env)
         reset_repo(lab_root, test, gh, p)
         first = [config.prompt_text(lab_root, test.prompt)] if prompt else []
-        argv = ["claude", *first, "--model", test.model, "--permission-mode", "default"]
+        argv = ["claude", *first, *_model_flags(test.model, test.effort), "--permission-mode", "default"]
         print(f"{test.id}: config dir {_shown(lab_root, p.config)}")
-        print(f"{test.id}: starting claude ({test.model}, profile {test.profile}); /exit ends the session")
+        print(f"{test.id}: starting claude ({_model_label(test)}, profile {test.profile}); /exit ends the session")
         started = time.monotonic()
         ran = True
         code = _run_in_terminal(argv, p.work, env)
