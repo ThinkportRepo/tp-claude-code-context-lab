@@ -178,6 +178,22 @@ statistics, subprocess timeouts (`timeout` is not on macOS by default), and
 the token flows are fragile in shell, BSD/GNU tool differences hurt
 portability, and testing would need an extra tool.
 
+### Prerequisites outside the repository
+
+Besides Python, `git`, `gh` and `claude`, the `dev-stack` profile needs
+two things on the machine:
+
+- Node.js with `npx`, which starts the MCP servers of its plugins.
+- Google Chrome, for the `playwright` plugin. Its MCP server uses the
+  installed Google Chrome. The lab is not a Node project, so it does not
+  install a browser itself.
+
+Preflight checks `npx`. `lab.py setup` checks for Google Chrome whenever the
+matrix contains a `dev-stack` test, and prints a warning, not an error, if
+it is missing: the app bundle in `/Applications` or `~/Applications` on
+macOS, or `google-chrome`, `google-chrome-stable` or `chrome` on `PATH`
+elsewhere. Without Chrome, `dev-stack` runs may fail to open a browser.
+
 ### Layout
 
 The code calls the directory that holds `lab.py` the **lab root**
@@ -280,9 +296,12 @@ Rejected after live probes:
 - Moving the sandbox to a temporary directory: works, but the sandbox was
   to stay inside the repository.
 
-Preflight also warns if a `CLAUDE.md`, `CLAUDE.local.md` or `.claude/`
-exists in a parent directory of the sandbox (other than `~/.claude`), since
-Claude Code reads `CLAUDE.md` files from parent directories.
+Preflight also warns if a `CLAUDE.md`, `CLAUDE.local.md` or
+`.claude/CLAUDE.md` exists in a parent directory of the sandbox (other
+than `~/.claude/CLAUDE.md`), since Claude Code may load these as memory,
+which skews token counts. A parent `.claude/` directory that holds only
+settings does not warn: Claude Code reads `.claude/settings*.json` only in
+the project directory itself.
 
 ### Git and gh config isolation
 
