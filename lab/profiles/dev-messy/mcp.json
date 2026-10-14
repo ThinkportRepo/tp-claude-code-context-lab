@@ -15,7 +15,10 @@
       "args": [
         "-y",
         "@modelcontextprotocol/server-memory@1.0.0"
-      ]
+      ],
+      "env": {
+        "MEMORY_FILE_PATH": "{config}/mcp-memory.jsonl"
+      }
     },
     "sequential-thinking": {
       "type": "stdio",
@@ -39,7 +42,10 @@
       "args": [
         "-y",
         "@upstash/context7-mcp@4.4.1"
-      ]
+      ],
+      "env": {
+        "OTEL_SDK_DISABLED": "true"
+      }
     },
     "chrome-devtools": {
       "type": "stdio",
@@ -71,14 +77,6 @@
       "args": [
         "-y",
         "@cyanheads/git-mcp-server@2.15.3"
-      ]
-    },
-    "desktop-commander": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@wonderwhy-er/desktop-commander@0.3.0"
       ]
     },
     "deepwiki": {
