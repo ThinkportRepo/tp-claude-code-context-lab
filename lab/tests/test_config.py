@@ -242,7 +242,8 @@ class Profiles(unittest.TestCase):
             "sequential-thinking": npx("@modelcontextprotocol/server-sequential-thinking@1.0.0"),
             "everything": npx("@modelcontextprotocol/server-everything@1.0.0"),
             "context7": npx("@upstash/context7-mcp@4.4.1") | {"env": {"OTEL_SDK_DISABLED": "true"}},
-            # --isolated: an in-memory browser profile, nothing kept outside the run (R46).
+            # --isolated: a fresh browser profile per server start (in memory for Playwright, a
+            # temporary directory removed on close for chrome-devtools), nothing reused (R46).
             "chrome-devtools": npx("chrome-devtools-mcp@1.10.1", "--isolated"),
             "playwright": npx("@playwright/mcp@0.0.83", "--isolated"),
             "git": npx("@cyanheads/git-mcp-server@2.15.3"),

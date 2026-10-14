@@ -13,7 +13,7 @@ Each entry is marked:
 The lab was built by AI coding agents under a coordinating agent, with a
 person deciding direction and running the steps that need a browser or the
 subscription (see [implementation-history.md](implementation-history.md)).
-The rulings R1–R36 and R38–R46 are numbered in the order they were made.
+The rulings R1–R36 and R38–R47 are numbered in the order they were made.
 R37 was a ruling on the review process and is not listed. Decisions the
 user made without a ruling number follow after them.
 
@@ -522,7 +522,7 @@ packages).
     `CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1`, which covers the
     chrome-devtools-mcp server whether it comes from `mcp.json` or from a
     plugin.
-  - the browser servers run with an in-memory profile (R46).
+  - the browser servers get a fresh profile at every start (R46).
 - **Why:** state that survives a run makes the next run start from
   something other than a fresh setup, which skews the measurement.
   Telemetry sends data about the lab to third parties and adds network
@@ -580,7 +580,7 @@ applies R42).
 - **Cost if wrong:** none for the measurement: the same server stays
   loaded through the plugin.
 
-### R46 — Browser MCP servers run with an in-memory profile
+### R46 — Browser MCP servers get a fresh profile at every start
 
 **Implementation decision** (2026-10-14, after a review of the branch;
 applies R42).
@@ -591,7 +591,9 @@ applies R42).
   isolated too, in `dev-stack` and `dev-messy`. The `chrome-devtools-mcp`
   plugin is removed from `dev-messy` with its allow rule. The profile has
   ten skill plugins and two MCP plugins, so nine user-scope and two plugin
-  MCP servers.
+  MCP servers. With `--isolated`, `@playwright/mcp` keeps the browser
+  profile in memory, and `chrome-devtools-mcp` uses a temporary directory
+  that it deletes when the browser closes.
 - **Why:** by default both servers keep a persistent browser profile in
   the user's home directory (`@playwright/mcp` under
   `~/Library/Caches/ms-playwright-mcp/` on macOS, `chrome-devtools-mcp` in
@@ -602,7 +604,26 @@ applies R42).
   switch for isolation, so that plugin had to go.
 - **Cost if wrong:** one browser overlap less in the stress test. A future
   version of a server may change its default or the meaning of
-  `--isolated`.
+  `--isolated`. If Claude Code ends a run while Chrome is open,
+  `chrome-devtools-mcp` may leave its temporary profile in the system's
+  temp directory; it is never reused.
+
+### R47 — Clear an earlier run's leftovers in the work dir
+
+**Implementation decision** (2026-10-14).
+
+- **Decided:** before each run, headless or interactive, the lab removes
+  every entry directly in `sandbox/<test>` except `config/`, `results/`,
+  `xyz/` and the `.git` boundary file. It refuses a directory outside
+  `<lab_root>/sandbox`, and it removes a symlink itself, never its target.
+- **Why:** Claude starts in `sandbox/<test>`, and files it writes there
+  outside `xyz/` stayed for the next run: `test7` still had
+  `poll-pages.sh` from an earlier run, and the Playwright MCP server
+  writes snapshots to `.playwright-mcp/` in its working directory. Repeat
+  runs of a test must start alike.
+- **Cost if wrong:** a file that a user put into `sandbox/<test>` by hand
+  is deleted. `sandbox/` belongs to the lab, which already deletes and
+  rebuilds it, so nothing there is the user's to keep.
 
 ## Further user decisions
 
