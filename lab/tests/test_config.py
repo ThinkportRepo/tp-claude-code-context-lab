@@ -245,7 +245,6 @@ class Profiles(unittest.TestCase):
             "playwright": npx("@playwright/mcp@0.0.83"),
             "git": npx("@cyanheads/git-mcp-server@2.15.3"),
             "deepwiki": {"type": "http", "url": "https://mcp.deepwiki.com/mcp"},
-            "microsoft-learn": {"type": "http", "url": "https://learn.microsoft.com/api/mcp"},
         })  # fmt: skip
 
     def test_dev_messy_extra_allow_rules_are_its_mcp_servers(self):
@@ -262,16 +261,19 @@ class Profiles(unittest.TestCase):
             ],
         )
 
-    def test_dev_messy_excludes_servers_that_leave_state_or_phone_home(self):
+    def test_dev_messy_excluded_servers(self):
         # desktop-commander: telemetry on by default, state in the home dir, unrestricted shell.
         # playwright-automation: writes ~/playwright-mcp-server.log in stdio mode.
+        # microsoft-learn: same URL as the microsoft-docs plugin's server, which Claude Code then drops.
         settings = config.profile_settings(REPO, "dev-messy")
         servers = config.profile_mcp_servers(REPO, "dev-messy")
-        for name in ("desktop-commander", "playwright-automation"):
+        allow = settings["permissions"]["allow"]
+        for name in ("desktop-commander", "playwright-automation", "microsoft-learn"):
             with self.subTest(server=name):
                 self.assertNotIn(name, servers)
-                self.assertFalse([r for r in settings["permissions"]["allow"] if name in r])
-        self.assertEqual(len(servers), 10)
+                self.assertNotIn(f"mcp__{name}", allow)
+        self.assertEqual(len(servers), 9)
+        self.assertIn("mcp__plugin_microsoft-docs_microsoft-learn", allow)  # the plugin's server stays
 
     def test_other_profiles_have_no_mcp_file(self):
         for name in ("clean", "superpowers", "dev-stack"):
