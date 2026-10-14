@@ -210,6 +210,14 @@ def compute(config_dir: Path) -> dict:
     return result
 
 
+def _mcp_connected(servers) -> str:
+    """"<connected>/<total>" for an init event's `mcp_servers`; "" without servers."""
+    if not isinstance(servers, list) or not servers:
+        return ""
+    connected = sum(1 for s in servers if isinstance(s, dict) and s.get("status") == "connected")
+    return f"{connected}/{len(servers)}"
+
+
 def stream_info(stream_files: list[Path]) -> dict:
     """Facts from `stream-json` output, one file per `claude` process.
 
@@ -221,8 +229,16 @@ def stream_info(stream_files: list[Path]) -> dict:
     session id and continue its totals. So neither events nor files of
     one session are ever added up. A `result` without a string
     `session_id` is treated as its own session. Missing data is `None`.
+
+    `mcp_connected` is "<connected>/<total>" over the `mcp_servers` of the
+    first `system`/`init` event in the first file (the run's first turn):
+    headless Claude Code does not wait for MCP servers before its first
+    request, so this shows how many were there at the start. It is "" if
+    that event is missing or lists no servers.
     """
     info = dict.fromkeys(("session_id", "limit_5h_end_pct", "denied", "result_totals"))
+    info["mcp_connected"] = ""
+    saw_init = False
     saw_result = False
     denied = False
     # last `result` modelUsage per session; a later result replaces an earlier one
@@ -230,7 +246,10 @@ def stream_info(stream_files: list[Path]) -> dict:
 
     for index, path in enumerate(stream_files):
         for event in _entries(Path(path)):
-            if event.get("type") == "result":
+            if index == 0 and not saw_init and event.get("type") == "system" and event.get("subtype") == "init":
+                saw_init = True
+                info["mcp_connected"] = _mcp_connected(event.get("mcp_servers"))
+            elif event.get("type") == "result":
                 saw_result = True
                 denied = denied or bool(event.get("permission_denials"))
                 session = event.get("session_id")

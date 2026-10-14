@@ -314,6 +314,7 @@ def run_headless(
                 )
         row["goal_ok"] = goal_ok
         row["limit_5h_end_pct"] = info["limit_5h_end_pct"]
+        row["mcp_connected"] = info["mcp_connected"]
         row["duration_s"] = None if started is None else round(time.monotonic() - started)
         row["status"] = _status(
             failed=failed, timed_out=timed_out, goal_ok=goal_ok, denied=info["denied"]
@@ -397,6 +398,7 @@ def run_interactive(
                 warn_if_lab_repo_seen(lab_root, test.id, p.config)
                 row["limit_5h_end_pct"] = statusline_limit(out_dir / STATUS_FILE)
             row["goal_ok"] = goal_ok
+            row["mcp_connected"] = ""  # no stream-json output, so no init event
             row["status"] = _status(failed=failed, timed_out=False, goal_ok=goal_ok, denied=None)
             record(lab_root, row)
     return row

@@ -232,6 +232,21 @@ class HeadlessArgv(unittest.TestCase):
 
 
 class HeadlessRun(FakeClaude):
+    def test_mcp_connected_from_the_first_turn(self):
+        fixture = self.tmp / "init-fixture"
+        shutil.copytree(FIXTURES / "headless_subagent", fixture)
+        init = {"type": "system", "subtype": "init", "session_id": SESSION, "mcp_servers": [
+            {"name": "a", "status": "connected"}, {"name": "b", "status": "pending"},
+            {"name": "c", "status": "pending"},
+        ]}  # fmt: skip
+        stream = fixture / "stream.jsonl"
+        stream.write_text(json.dumps(init) + "\n" + stream.read_text())
+        os.environ["FAKE_CLAUDE_FIXTURE"] = str(fixture)
+        row = self.run_headless(FakeGitHub(goal_ok=[True]))
+        self.assertEqual(row["mcp_connected"], "1/3")
+        (csv_row,) = self.csv_rows()
+        self.assertEqual(csv_row["mcp_connected"], "1/3")
+
     def test_effort_reaches_every_turn_but_not_the_probe(self):
         limits.probe(self.lab_root, CFG)
         test = config.Test("test1", "clean", "simple", MODEL, "medium")
@@ -256,6 +271,7 @@ class HeadlessRun(FakeClaude):
         self.assertEqual(row["mode"], "headless")
         self.assertEqual(row["model"], MODEL)
         self.assertIsNone(row["effort"])
+        self.assertEqual(row["mcp_connected"], "")  # the fixture stream has no init event
         self.assertEqual((row["test"], row["profile"], row["prompt"]), ("test1", "clean", "simple"))
         self.assertEqual(set(row), set(results.FIELDS))
         (csv_row,) = self.csv_rows()
@@ -552,6 +568,7 @@ class Interactive(FakeClaude):
         self.assertEqual(row["limit_5h_end_pct"], 13)
         self.assertEqual(row["limit_5h_start_pct"], 12)
         self.assertEqual(row["mode"], "interactive")
+        self.assertEqual(row["mcp_connected"], "")  # no stream, so no init event
         self.assertEqual(row["status"], "ok")
         self.assertIs(row["goal_ok"], True)
         self.assertEqual(set(row), set(results.FIELDS))

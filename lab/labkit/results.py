@@ -17,7 +17,7 @@ FIELDS = (
     "tokens_out", "cache_read", "cache_write", "sub_calls",
     "sub_ctx_start_max", "sub_ctx_growth_max", "api_calls", "turns",
     "duration_s", "limit_5h_start_pct", "limit_5h_end_pct", "api_equiv_usd",
-    "plugin_versions",
+    "plugin_versions", "mcp_connected",
 )  # fmt: skip
 
 
