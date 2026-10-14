@@ -110,7 +110,7 @@ with Claude Code, so no extra marketplace is needed.
 | `clean` | none |
 | `superpowers` | `superpowers` |
 | `dev-stack` | `superpowers`, `frontend-design`, `microsoft-docs`, `playwright` |
-| `dev-messy` | ten skill plugins and three MCP plugins (three plugin servers), plus nine user-scope MCP servers (see [dev-messy](#dev-messy)) |
+| `dev-messy` | ten skill plugins and two MCP plugins (two plugin servers), plus nine user-scope MCP servers (see [dev-messy](#dev-messy)) |
 
 `dev-stack` stands for a typical developer setup, built from the most
 installed plugins in the official marketplace. Install counts and token
@@ -141,7 +141,7 @@ Rejected for `dev-stack`:
 
 Every profile's `settings.json` holds the plugin list (`enabledPlugins`) and
 the shared permission lists (see [Permissions](#permissions)). `dev-stack`
-also allows its two MCP servers, `dev-messy` its twelve.
+also allows its two MCP servers, `dev-messy` its eleven.
 
 A profile can also have an `mcp.json` with MCP servers that no plugin
 ships, in the format `{"mcpServers": {"<name>": {...}}}`. The lab writes
@@ -168,7 +168,7 @@ Plugins, all from `claude-plugins-official`:
   `pr-review-toolkit`, `code-simplifier`, `feature-dev`,
   `commit-commands`, `claude-md-management`, `skill-creator`,
   `claude-code-setup`;
-- MCP servers: `playwright`, `microsoft-docs`, `chrome-devtools-mcp`.
+- MCP servers: `playwright`, `microsoft-docs`.
 
 User-scope MCP servers in `lab/profiles/dev-messy/mcp.json`, each pinned
 to an exact version that is published and not deprecated on npm (checked
@@ -181,31 +181,43 @@ to an exact version that is published and not deprecated on npm (checked
 | `sequential-thinking` | `@modelcontextprotocol/server-sequential-thinking@1.0.0` |
 | `everything` | `@modelcontextprotocol/server-everything@1.0.0` |
 | `context7` | `@upstash/context7-mcp@4.4.1`, telemetry off |
-| `chrome-devtools` | `chrome-devtools-mcp@1.10.1`, usage statistics off |
-| `playwright` | `@playwright/mcp@0.0.83` |
+| `chrome-devtools` | `chrome-devtools-mcp@1.10.1 --isolated`, usage statistics off |
+| `playwright` | `@playwright/mcp@0.0.83 --isolated` |
 | `git` | `@cyanheads/git-mcp-server@2.15.3` |
 | `deepwiki` | `https://mcp.deepwiki.com/mcp` (HTTP, no auth) |
 
-The overlap is deliberate: four browser servers (`playwright` and
-`chrome-devtools`, each as a plugin and as a user-scope server), three
-docs and lookup servers (`context7`, `deepwiki` and the `microsoft-docs`
+The overlap is deliberate: three browser servers (the `playwright`
+plugin's server, and the user-scope `playwright` and `chrome-devtools`),
+three docs and lookup servers (`context7`, `deepwiki` and the `microsoft-docs`
 plugin's `microsoft-learn`), a `git` server next to the `git` and `gh`
 CLIs, and `filesystem` next to the built-in file tools.
-`chrome-devtools-mcp` was rejected for `dev-stack` because of exactly
-this overlap. `context7` was rejected there because the remote server
+`chrome-devtools-mcp` was rejected for `dev-stack` because of this
+overlap. `context7` was rejected there because the remote server
 needs an OAuth login; `dev-messy` runs the npm package locally, which
 needs none.
 
 An overlap only counts if the configs differ. Claude Code drops a
 plugin's MCP server when a user-scope server has the same URL (observed
-in the live `test7` and `test8` runs, 2026-10-14, Claude Code 2.1.296;
+in the live `test7` and `test8` runs, 2026-10-14, Claude Code 2.1.299;
 not documented): a user-scope copy of the `microsoft-docs` plugin's
 `microsoft-learn` replaced the plugin's server instead of adding a second
-one, so it was removed (R45). The two browser overlaps survive because
-their configs differ: plugin `playwright` runs `@playwright/mcp@latest`
-next to the user-scope `@playwright/mcp@0.0.83`, and plugin
-`chrome-devtools` runs `chrome-devtools-mcp@1.9.0` next to the
-user-scope `chrome-devtools-mcp@1.10.1`.
+one, so it was removed (R45). The `playwright` overlap survives because
+the configs differ: the plugin runs `@playwright/mcp@latest`, the
+user-scope server `@playwright/mcp@0.0.83 --isolated`.
+
+The browser servers run isolated (R46). By default both keep a persistent
+browser profile in the user's home directory: `@playwright/mcp` one per
+workspace (on macOS under `~/Library/Caches/ms-playwright-mcp/`),
+`chrome-devtools-mcp` one shared profile in
+`~/.cache/chrome-devtools-mcp/chrome-profile`. Browser cache, cookies and
+history would then carry over from one run of a test to the next, and
+two copies of a server would lock each other's profile. With
+`--isolated` the profile stays in memory. The user-scope servers get the
+flag in `mcp.json`; for the `playwright` plugin's server, whose args the
+lab cannot change, every run sets `PLAYWRIGHT_MCP_ISOLATED=1`, which
+covers `dev-stack` too. The `chrome-devtools-mcp` plugin was removed from
+`dev-messy`, since `chrome-devtools-mcp` has no environment switch for
+isolation.
 
 No server may keep state outside the run or send telemetry (R42; checked
 in the published npm packages, 2026-10-14):
@@ -218,8 +230,8 @@ in the published npm packages, 2026-10-14):
 - `chrome-devtools-mcp` sends usage statistics to Google and checks for
   updates. The lab sets `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1` and
   `CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1` in every run's environment,
-  which MCP servers inherit, so the user-scope server and the plugin's
-  server are both covered.
+  which MCP servers inherit, so the server is covered whether it comes
+  from `mcp.json` or from a plugin.
 - `desktop-commander` is excluded: its telemetry is on by default, it
   writes state into the user's home directory, and its tools run any
   shell command outside the shared `Bash` allow and deny lists.
@@ -741,10 +753,11 @@ or from the last status-line data of an interactive session.
   context.
 - **MCP servers start late in headless runs.** Headless Claude Code does
   not wait for every MCP server before its first API request (live
-  `test7` run, 2026-10-14, Claude Code 2.1.296). Turn 1 had 4 of 13
+  `test7` run, 2026-10-14, Claude Code 2.1.299). Turn 1 had 4 of 13
   servers connected: the plugin servers and the two HTTP servers, while
-  every `npx` server was still pending on a cold npx cache. Turns 2 and 3
-  had 10 of 13, a different subset each time. So `ctx_start` of a profile
+  every user-scope `npx` server was still pending on a cold npx cache.
+  Turns 2 and 3 had 9 of 13, a different subset each time. (That run used
+  an earlier version of `dev-messy` with 13 servers; it now has 11.) So `ctx_start` of a profile
   with many MCP servers depends on startup timing, and servers that
   connect later add tools during the run. The first run on a cold npx
   cache is the slowest. `mcp_connected` records the count at the start,
@@ -772,7 +785,7 @@ heading is `[headless / claude-haiku-5-5]`.
    (runs with `goal_ok`), and `ctx_start`, `ctx_growth`, `tokens_out`,
    `cache_read`, `limit_used` (5-hour limit end minus start). If a
    group's runs recorded `mcp_connected`, a line below the row shows it,
-   for example `MCP servers connected at start: 4/13–10/13`.
+   for example `MCP servers connected at start: 4/13–9/13`.
 2. **Starting point and growth per context** — per profile and model
    (with the effort after the model, if set):
    start and growth of the interactive main session, the headless main
@@ -812,6 +825,10 @@ whatever is left:
   with `--secrets`, still runs the Claude revocation step.
 - It exits with status 1 if anything asked for was not done: declined,
   skipped, a deletion failed, or a token is not proven revoked.
+
+A run of the `playwright` plugin made before R46 may have left a browser
+profile in the Playwright cache (on macOS under
+`~/Library/Caches/ms-playwright-mcp/`). Teardown does not remove it.
 
 ## Measurements
 
