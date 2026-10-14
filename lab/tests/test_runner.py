@@ -222,7 +222,30 @@ class Probe(FakeClaude):
         self.assertEqual(err.getvalue(), "")
 
 
+class HeadlessArgv(unittest.TestCase):
+    def test_effort_only_when_set(self):
+        self.assertNotIn("--effort", runner.headless_argv("hi", MODEL))
+        self.assertNotIn("--effort", runner.headless_argv("hi", MODEL, "s1", effort=None))
+        argv = runner.headless_argv("hi", MODEL, "s1", effort="medium")
+        self.assertEqual(argv[argv.index("--effort") + 1], "medium")
+        self.assertEqual(argv.count("--effort"), 1)
+
+
 class HeadlessRun(FakeClaude):
+    def test_effort_reaches_every_turn_but_not_the_probe(self):
+        limits.probe(self.lab_root, CFG)
+        test = config.Test("test1", "clean", "simple", MODEL, "medium")
+        row = self.run_headless(FakeGitHub(goal_ok=[False, False]), test=test)
+        probe, *turns = self.p_calls()
+        self.assertNotIn("--effort", probe["argv"])
+        self.assertEqual(len(turns), 1 + len(FOLLOWUPS))
+        for call in turns:
+            argv = call["argv"]
+            self.assertEqual(argv[argv.index("--effort") + 1], "medium", argv)
+        self.assertEqual(row["effort"], "medium")
+        (csv_row,) = self.csv_rows()
+        self.assertEqual(csv_row["effort"], "medium")
+
     def test_ok_run_writes_row(self):
         row = self.run_headless(FakeGitHub(goal_ok=[True]))
         self.assertEqual(row["status"], "ok")
@@ -232,6 +255,7 @@ class HeadlessRun(FakeClaude):
         self.assertEqual(row["limit_5h_end_pct"], 12)
         self.assertEqual(row["mode"], "headless")
         self.assertEqual(row["model"], MODEL)
+        self.assertIsNone(row["effort"])
         self.assertEqual((row["test"], row["profile"], row["prompt"]), ("test1", "clean", "simple"))
         self.assertEqual(set(row), set(results.FIELDS))
         (csv_row,) = self.csv_rows()
@@ -498,6 +522,7 @@ class HeadlessRun(FakeClaude):
             self.assertEqual(argv[argv.index("--permission-mode") + 1], "default")
             self.assertEqual(argv[argv.index("--output-format") + 1], "stream-json")
             self.assertIn("--verbose", argv)
+            self.assertNotIn("--effort", argv)  # no effort in the matrix: none passed
             self.assertNotIn("--bare", argv)
             self.assertNotIn("bypassPermissions", argv)
             self.assertTrue(call["stdin_devnull"], argv)
@@ -552,6 +577,15 @@ class Interactive(FakeClaude):
         self.assertEqual(session["cwd"], str(self.lab_root / "sandbox" / "test1"))
         self.assertEqual(session["config_dir"], str(self.lab_root / "sandbox" / "test1" / "config"))
         self.assertTrue(session["oauth_env"])
+
+    def test_session_argv_carries_the_effort(self):
+        test = config.Test("test1", "clean", "simple", MODEL, "high")
+        row = self.run_interactive(FakeGitHub(goal_ok=[True]), test=test)
+        (session,) = self.sessions()
+        self.assertEqual(
+            session["argv"], [PROMPT, "--model", MODEL, "--effort", "high", "--permission-mode", "default"]
+        )
+        self.assertEqual(row["effort"], "high")
 
     def test_goal_not_met_is_failed(self):
         row = self.run_interactive(FakeGitHub(goal_ok=[False]))

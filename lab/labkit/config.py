@@ -11,6 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_MODEL = "claude-haiku-5-5"
+# Values of `claude --effort`; a test without one passes no --effort.
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+# In the model column: use the default model (to set an effort without a model).
+DEFAULT_MODEL_MARK = "-"
 
 # Prompt name -> file, relative to the lab root. `well-defined` is the
 # repo's own prompt file; both are used unchanged.
@@ -31,6 +35,7 @@ class Test:
     profile: str
     prompt: str
     model: str
+    effort: str | None = None
 
 
 def _profile_dir(lab_dir: Path, profile: str) -> Path:
@@ -42,10 +47,12 @@ def _profile_dir(lab_dir: Path, profile: str) -> Path:
 
 
 def load_matrix(path: Path, environ: Mapping[str, str]) -> list[Test]:
-    """Parse matrix.conf: whitespace columns `id profile prompt [model]`.
+    """Parse matrix.conf: whitespace columns `id profile prompt [model] [effort]`.
 
     Model per test: the model column, else LAB_MODEL from `environ`, else
-    DEFAULT_MODEL. Profiles are looked up in `profiles/` next to the file.
+    DEFAULT_MODEL; a model column of `-` also means "not set", so a test can
+    name an effort without a model. Effort: one of EFFORTS, or None if the
+    column is absent. Profiles are looked up in `profiles/` next to the file.
     Ids must match `test[A-Za-z0-9_-]*`, profile names `[a-z0-9][a-z0-9-]*`.
     Raises ValueError("<path>:<line>: ...") for the first bad line.
     """
@@ -58,9 +65,13 @@ def load_matrix(path: Path, environ: Mapping[str, str]) -> list[Test]:
             continue
         columns = line.split()
         where = f"{path}:{lineno}"
-        if len(columns) not in (3, 4):
-            raise ValueError(f"{where}: expected 'id profile prompt [model]', got {len(columns)} columns")
-        test_id, profile, prompt, *model = columns
+        if len(columns) not in (3, 4, 5):
+            raise ValueError(
+                f"{where}: expected 'id profile prompt [model] [effort]', got {len(columns)} columns"
+            )
+        test_id, profile, prompt, *rest = columns
+        model = rest[0] if rest and rest[0] != DEFAULT_MODEL_MARK else fallback
+        effort = rest[1] if len(rest) > 1 else None
         if not _TEST_ID.fullmatch(test_id):
             raise ValueError(
                 f"{where}: test id {test_id!r} must start with 'test' followed by letters, digits, '_' or '-'"
@@ -71,10 +82,12 @@ def load_matrix(path: Path, environ: Mapping[str, str]) -> list[Test]:
             raise ValueError(f"{where}: {exc}") from None
         if prompt not in PROMPT_FILES:
             raise ValueError(f"{where}: unknown prompt {prompt!r} (known: {', '.join(PROMPT_FILES)})")
+        if effort is not None and effort not in EFFORTS:
+            raise ValueError(f"{where}: unknown effort {effort!r} (known: {', '.join(EFFORTS)})")
         if test_id in seen:
             raise ValueError(f"{where}: duplicate test id {test_id!r}")
         seen.add(test_id)
-        tests.append(Test(test_id, profile, prompt, model[0] if model else fallback))
+        tests.append(Test(test_id, profile, prompt, model, effort))
     return tests
 
 

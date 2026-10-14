@@ -55,8 +55,39 @@ class Matrix(TempLab):
 
     def test_too_many_columns_rejected(self):
         with self.assertRaises(ValueError) as ctx:
-            self.load("test1 clean simple model extra\n")
+            self.load("test1 clean simple model high extra\n")
         self.assertIn("matrix.conf:1", str(ctx.exception))
+        self.assertIn("[effort]", str(ctx.exception))
+
+    def test_effort_column(self):
+        text = (
+            "test1 clean simple\n"
+            "test2 clean simple m-col high\n"
+            "test3 clean simple - medium\n"
+            "test4 clean simple -\n"
+        )
+        tests = self.load(text, {"LAB_MODEL": "m-env"})
+        self.assertEqual(
+            [(t.model, t.effort) for t in tests],
+            [("m-env", None), ("m-col", "high"), ("m-env", "medium"), ("m-env", None)],
+        )
+        self.assertEqual(self.load("test1 clean simple - low\n")[0].model, config.DEFAULT_MODEL)
+
+    def test_every_effort_level_parses(self):
+        for level in ("low", "medium", "high", "xhigh", "max"):
+            with self.subTest(effort=level):
+                self.assertEqual(self.load(f"test1 clean simple - {level}\n")[0].effort, level)
+
+    def test_invalid_effort_rejected(self):
+        for bad in ("bogus", "Medium", "-"):
+            with self.subTest(effort=bad):
+                with self.assertRaises(ValueError) as ctx:
+                    self.load(f"# header\ntest1 clean simple m {bad}\n")
+                self.assertIn(f"{self.matrix}:2", str(ctx.exception))
+                self.assertIn("effort", str(ctx.exception))
+
+    def test_effort_defaults_to_none(self):
+        self.assertIsNone(config.Test("test1", "clean", "simple", "m").effort)
 
     def test_unknown_profile_rejected(self):
         with self.assertRaises(ValueError) as ctx:
