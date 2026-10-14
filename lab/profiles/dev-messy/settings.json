@@ -11,8 +11,7 @@
     "skill-creator@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
-    "microsoft-docs@claude-plugins-official": true,
-    "chrome-devtools-mcp@claude-plugins-official": true
+    "microsoft-docs@claude-plugins-official": true
   },
   "permissions": {
     "allow": [
@@ -29,7 +28,6 @@
       "Bash(mkdir:*)",
       "mcp__plugin_playwright_playwright",
       "mcp__plugin_microsoft-docs_microsoft-learn",
-      "mcp__plugin_chrome-devtools-mcp_chrome-devtools",
       "mcp__filesystem",
       "mcp__memory",
       "mcp__sequential-thinking",
