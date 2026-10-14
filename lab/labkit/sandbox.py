@@ -96,6 +96,31 @@ def write_git_boundary(work_dir: Path, *, lab_root: Path) -> None:
     git_path.write_text("gitdir: /nonexistent\n")
 
 
+# What the lab itself keeps in sandbox/<test>; everything else there is a run's leftover.
+WORK_DIR_KEEP = frozenset({"config", "results", REPO_DIRNAME, ".git"})
+
+
+def clear_work_dir(lab_root: Path, test_id: str) -> None:
+    """Remove every entry directly in sandbox/<test_id> except WORK_DIR_KEEP.
+
+    Claude runs in that directory, and files it writes there outside `xyz/`
+    (scripts, `.playwright-mcp/` snapshots) would otherwise be there for the
+    next run. The directory comes from `paths`, so an id that leads outside
+    `<lab_root>/sandbox` is refused. A symlink is removed itself, never its
+    target, and `rmtree` does not follow symlinks inside a directory.
+    """
+    work = paths(lab_root, test_id).work
+    if not work.is_dir():
+        return
+    for entry in work.iterdir():
+        if entry.name in WORK_DIR_KEEP:
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+
+
 def _with_placeholders(server: dict, values: dict[str, str]) -> dict:
     """A copy of an MCP server config with placeholders filled in.
 
@@ -122,6 +147,9 @@ def _with_placeholders(server: dict, values: dict[str, str]) -> dict:
 def build_config(lab_root: Path, test: config.Test, p: SimpleNamespace, status_file: Path) -> None:
     """Recreate p.config with the profile's settings, a status line and a trusted cwd.
 
+    Also removes an earlier run's leftovers from the work dir
+    (`clear_work_dir`), so every run starts with the same files.
+
     The profile's mcp.json servers become user-scope `mcpServers` in
     `.claude.json`. In their args and env values, `{work}` becomes the work
     dir and `{config}` this fresh config dir, so a server can keep its state
@@ -134,6 +162,7 @@ def build_config(lab_root: Path, test: config.Test, p: SimpleNamespace, status_f
         raise ValueError(f"refusing to rebuild {p.config}: not the config dir of test {test.id!r}")
     settings = config.profile_settings(lab_root, test.profile)
     servers = config.profile_mcp_servers(lab_root, test.profile)
+    clear_work_dir(lab_root, test.id)
     shutil.rmtree(p.config, ignore_errors=True)
     p.config.mkdir(parents=True)
     settings["statusLine"] = {

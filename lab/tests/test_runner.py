@@ -595,6 +595,17 @@ class Interactive(FakeClaude):
         self.assertEqual(session["config_dir"], str(self.lab_root / "sandbox" / "test1" / "config"))
         self.assertTrue(session["oauth_env"])
 
+    def test_leftovers_of_an_earlier_run_are_removed_before_both_modes(self):
+        work = self.lab_root / "sandbox" / "test1"
+        for run in (lambda: self.run_interactive(FakeGitHub(goal_ok=[True])),
+                    lambda: FakeClaude.run_headless(self, FakeGitHub(goal_ok=[True]))):
+            work.mkdir(parents=True, exist_ok=True)
+            (work / "poll-pages.sh").write_text("from an earlier run")
+            (work / ".playwright-mcp").mkdir(exist_ok=True)
+            run()
+            self.assertFalse((work / "poll-pages.sh").exists())
+            self.assertFalse((work / ".playwright-mcp").exists())
+
     def test_session_argv_carries_the_effort(self):
         test = config.Test("test1", "clean", "simple", MODEL, "high")
         row = self.run_interactive(FakeGitHub(goal_ok=[True]), test=test)
