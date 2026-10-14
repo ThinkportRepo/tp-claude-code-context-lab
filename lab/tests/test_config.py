@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -190,6 +191,33 @@ class Profiles(unittest.TestCase):
         for bad in ("../prompts", "..", "."):
             with self.subTest(profile=bad), self.assertRaises(ValueError):
                 config.profile_settings(REPO, bad)
+
+
+class ProfileMcpServers(TempLab):
+    """lab/profiles/<p>/mcp.json: user-scope MCP servers of a profile."""
+
+    def write(self, text, profile="clean"):
+        (self.lab_root / "lab" / "profiles" / profile / "mcp.json").write_text(text)
+
+    def test_missing_file_gives_no_servers(self):
+        self.assertEqual(config.profile_mcp_servers(self.lab_root, "clean"), {})
+
+    def test_servers_are_read(self):
+        servers = {"memory": {"type": "stdio", "command": "npx", "args": ["-y", "pkg@1.0.0"]}}
+        self.write(json.dumps({"mcpServers": servers}))
+        self.assertEqual(config.profile_mcp_servers(self.lab_root, "clean"), servers)
+
+    def test_invalid_file_names_the_file(self):
+        for text in ("{not json", "[]", '{"servers": {}}', '{"mcpServers": []}', '{"mcpServers": {"a": "npx"}}'):
+            with self.subTest(text=text):
+                self.write(text)
+                with self.assertRaises(ValueError) as ctx:
+                    config.profile_mcp_servers(self.lab_root, "clean")
+                self.assertIn(str(self.lab_root / "lab" / "profiles" / "clean" / "mcp.json"), str(ctx.exception))
+
+    def test_unknown_profile_rejected(self):
+        with self.assertRaises(ValueError):
+            config.profile_mcp_servers(self.lab_root, "nope")
 
 
 class CliWiring(TempLab):
