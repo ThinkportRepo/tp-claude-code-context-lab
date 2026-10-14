@@ -20,11 +20,12 @@ consumes, so you can compare setups with measurements instead of guesses.
   the subscription, not API billing.
 - Python 3.11 or newer. The lab uses the standard library only.
 - `git` and the GitHub CLI (`gh`).
-- Node.js with `npx`, if `lab/matrix.conf` contains a `dev-stack` test (the
-  default file does). `setup`, `run` and `session` need it then.
-- Google Chrome, for the `playwright` plugin in the `dev-stack` profile
-  (the plugin is expected to use the installed Chrome). `setup` warns if
-  it is missing.
+- Node.js with `npx`, if `lab/matrix.conf` contains a `dev-stack` or
+  `dev-messy` test (the default file does). `setup`, `run` and `session`
+  need it then.
+- Google Chrome, for the browser MCP servers in the `dev-stack` and
+  `dev-messy` profiles. The `playwright` plugin's MCP server uses the
+  installed Chrome (verified 2026-10-14). `setup` warns if it is missing.
 - A new, empty GitHub organization in which you are an admin. Create it in
   the browser; `gh` cannot create organizations.
 
@@ -74,6 +75,35 @@ Before you start:
   Both are stored in `.env` (mode 600, not committed).
 - Run `python3 lab.py teardown --secrets` after the lab to revoke the
   tokens.
+
+### Configure the test matrix
+
+`lab/matrix.conf` lists one test per line, with the columns
+`id profile prompt [model] [effort]`. A profile is a directory in
+`lab/profiles/`; the prompt is `simple` (`lab/prompts/simple.txt`) or
+`well-defined` (`well-defined-prompt`). Without a model, or with `-` in
+the model column, a test uses `LAB_MODEL` from `.env`, else
+`claude-haiku-5-5`. `effort` is `low`, `medium`, `high`, `xhigh` or `max`;
+without it the lab passes no `--effort`. `REPEAT=n` in `.env` (or
+`run --repeat n`) runs each test n times.
+
+Example; the third line sets an effort for the default model:
+
+```
+test1    clean        simple
+test9    clean        simple        claude-sonnet-5   medium
+test10   dev-messy    simple        -                 high
+```
+
+The profiles:
+
+- `clean`: no plugins, the baseline.
+- `superpowers`: the `superpowers` skill plugin.
+- `dev-stack`: a typical developer setup of four popular plugins, two of
+  them with MCP servers.
+- `dev-messy`: a stress test for a setup that has grown over time: ten
+  skill plugins, three MCP plugins and twelve more MCP servers, with heavy
+  overlap between them.
 
 ## Documentation
 
