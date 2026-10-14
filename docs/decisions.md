@@ -534,6 +534,34 @@ user made without a ruling number follow after them.
 - **Why:** a published lab needs a starting point and clear terms.
 - **Cost if wrong:** more files to keep in sync with the code.
 
+### Check for Google Chrome instead of installing Chromium
+
+**User decision** (2026-10-14).
+
+- **Decided:** `lab.py setup` no longer runs `npx playwright install
+  chromium`. When the matrix contains a `dev-stack` test, it warns if
+  Google Chrome is not installed.
+- **Why:** the lab never uses Playwright. Only the MCP server of the
+  `playwright` plugin does, and it brings its own library and uses the
+  installed Google Chrome. The installed Chromium was most likely never
+  used, and the command printed a warning because the lab is not a Node
+  project.
+- **Cost if wrong:** if the MCP server's default is not Chrome, `dev-stack`
+  runs may fail to open a browser until a browser is installed.
+
+### Warn only for memory files in parent directories
+
+**User decision** (2026-10-14).
+
+- **Decided:** preflight warns only for `CLAUDE.md`, `CLAUDE.local.md` and
+  `.claude/CLAUDE.md` in parent directories of the sandbox. A parent
+  `.claude/` directory with only settings does not warn.
+- **Why:** Claude Code reads `.claude/settings*.json` only in the project
+  directory itself. From parent directories it loads memory files. The old
+  warning fired for settings that have no effect on the runs.
+- **Cost if wrong:** a future Claude Code version that reads more from
+  parent directories would go unwarned.
+
 ## Open decisions
 
 - **License and copyright holder.** The repository currently states
