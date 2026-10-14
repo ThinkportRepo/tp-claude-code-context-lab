@@ -243,7 +243,6 @@ class Profiles(unittest.TestCase):
             "context7": npx("@upstash/context7-mcp@4.4.1") | {"env": {"OTEL_SDK_DISABLED": "true"}},
             "chrome-devtools": npx("chrome-devtools-mcp@1.10.1"),
             "playwright": npx("@playwright/mcp@0.0.83"),
-            "playwright-automation": npx("@executeautomation/playwright-mcp-server@1.0.12"),
             "git": npx("@cyanheads/git-mcp-server@2.15.3"),
             "deepwiki": {"type": "http", "url": "https://mcp.deepwiki.com/mcp"},
             "microsoft-learn": {"type": "http", "url": "https://learn.microsoft.com/api/mcp"},
@@ -263,11 +262,16 @@ class Profiles(unittest.TestCase):
             ],
         )
 
-    def test_dev_messy_excludes_desktop_commander(self):
-        # Telemetry on by default, state in the home dir, unrestricted shell.
+    def test_dev_messy_excludes_servers_that_leave_state_or_phone_home(self):
+        # desktop-commander: telemetry on by default, state in the home dir, unrestricted shell.
+        # playwright-automation: writes ~/playwright-mcp-server.log in stdio mode.
         settings = config.profile_settings(REPO, "dev-messy")
-        self.assertNotIn("desktop-commander", config.profile_mcp_servers(REPO, "dev-messy"))
-        self.assertFalse([r for r in settings["permissions"]["allow"] if "desktop-commander" in r])
+        servers = config.profile_mcp_servers(REPO, "dev-messy")
+        for name in ("desktop-commander", "playwright-automation"):
+            with self.subTest(server=name):
+                self.assertNotIn(name, servers)
+                self.assertFalse([r for r in settings["permissions"]["allow"] if name in r])
+        self.assertEqual(len(servers), 10)
 
     def test_other_profiles_have_no_mcp_file(self):
         for name in ("clean", "superpowers", "dev-stack"):

@@ -63,14 +63,6 @@
         "@playwright/mcp@0.0.83"
       ]
     },
-    "playwright-automation": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@executeautomation/playwright-mcp-server@1.0.12"
-      ]
-    },
     "git": {
       "type": "stdio",
       "command": "npx",
