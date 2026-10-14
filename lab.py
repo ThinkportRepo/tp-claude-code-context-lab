@@ -45,9 +45,6 @@ NEEDS_GITHUB = {"setup", "run", "session"}
 # teardown has to work with what is left: no Claude token (it may be gone
 # already), no npx, and an expired GitHub token only skips the repo part.
 TEARDOWN = "teardown"
-# Pinned so `setup` does not run whatever npx finds as latest; this is the
-# version `npx playwright --version` reported when the lab was written.
-PLAYWRIGHT_VERSION = "1.64.0"
 
 
 def results_file() -> Path:
@@ -227,7 +224,7 @@ def run_session(cfg: dict[str, str], test_id: str, prompt: bool) -> int:
 
 
 def run_setup(cfg: dict[str, str]) -> int:
-    """`lab.py setup`: check org access, install the browser, create sandbox dirs, show the matrix."""
+    """`lab.py setup`: check org access (and Chrome for dev-stack), create sandbox dirs, show the matrix."""
     tests = _load_tests(cfg, "all")
     if tests is None:
         return 1
@@ -237,11 +234,13 @@ def run_setup(cfg: dict[str, str]) -> int:
             print(f"error: cannot read organization {cfg['LAB_GH_ORG']} with GH_TOKEN", file=sys.stderr)
             return 1
         if any(t.profile == "dev-stack" for t in tests):
-            install = ["npx", "-y", f"playwright@{PLAYWRIGHT_VERSION}", "install", "chromium"]
-            print(f"Installing the Playwright browser ({' '.join(install)}) ...")
-            if subprocess.run(install).returncode != 0:
-                print(f"error: `{' '.join(install)}` failed", file=sys.stderr)
-                return 1
+            if not preflight.chrome_installed(Path.home()):
+                print(
+                    "warning: Google Chrome is not installed. The playwright plugin in the dev-stack"
+                    " profile starts its MCP server with the installed Google Chrome, so dev-stack runs"
+                    " may fail to open a browser. Install Google Chrome to fix this.",
+                    file=sys.stderr,
+                )
         for test in tests:
             sandbox.paths(LAB_ROOT, test.id).base.mkdir(parents=True, exist_ok=True)
         print(f"Sandbox: {SANDBOX}")

@@ -14,6 +14,10 @@ CLAUDE_HINT = "run `python3 lab.py tokens claude`"
 GITHUB_HINT = "run `python3 lab.py tokens github`"
 # Files and directories Claude Code reads from parent directories.
 PROJECT_CONFIG = ("CLAUDE.md", "CLAUDE.local.md", ".claude")
+# Where Google Chrome lives on macOS (the per-user directory is `home / "Applications"`).
+MACOS_APP_DIRS = (Path("/Applications"),)
+# Executable names of Google Chrome on PATH on other systems.
+CHROME_COMMANDS = ("google-chrome", "google-chrome-stable", "chrome")
 
 
 def check(
@@ -52,6 +56,14 @@ def check(
 
     warnings.extend(_parent_config_warnings(sandbox, home))
     return errors, warnings
+
+
+def chrome_installed(home: Path, which=shutil.which) -> bool:
+    """True if Google Chrome is installed: an app bundle on macOS, a command on PATH elsewhere."""
+    if sys.platform == "darwin":
+        app_dirs = (*MACOS_APP_DIRS, home / "Applications")
+        return any((d / "Google Chrome.app").exists() for d in app_dirs)
+    return any(which(name) for name in CHROME_COMMANDS)
 
 
 def _check_github_expiry(
