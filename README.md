@@ -102,7 +102,7 @@ The profiles:
 - `dev-stack`: a typical developer setup of four popular plugins, two of
   them with MCP servers.
 - `dev-messy`: a stress test for a setup that has grown over time: ten
-  skill plugins, three MCP plugins and twelve more MCP servers, with heavy
+  skill plugins, three MCP plugins and eleven more MCP servers, with heavy
   overlap between them.
 
 ## Documentation

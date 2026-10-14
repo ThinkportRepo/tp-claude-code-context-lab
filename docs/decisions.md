@@ -13,8 +13,9 @@ Each entry is marked:
 The lab was built by AI coding agents under a coordinating agent, with a
 person deciding direction and running the steps that need a browser or the
 subscription (see [implementation-history.md](implementation-history.md)).
-The rulings (R1–R34, R38–R41) are numbered in the order they were made.
-Decisions the user made without a ruling number follow after them.
+The rulings R1–R36 and R38–R42 are numbered in the order they were made.
+R37 was a ruling on the review process and is not listed. Decisions the
+user made without a ruling number follow after them.
 
 ## Rulings
 
@@ -405,6 +406,33 @@ Decisions the user made without a ruling number follow after them.
 - **Cost if wrong:** a link set by a slow API call at the very end of a
   turn is missed, which costs one follow-up.
 
+### R35 — A minimal CI workflow runs the unit tests
+
+**Implementation decision.**
+
+- **Decided:** a GitHub Actions workflow runs
+  `python3 -W error -m unittest discover -s lab/tests` on Python 3.11 and
+  on the latest Python 3 (`3.x`). It has read-only permissions and does
+  nothing else.
+- **Why:** the README and design say the lab needs Python 3.11 or newer.
+  Running the tests on 3.11 backs that claim, and `3.x` with `-W error`
+  shows a new deprecation warning before users run into it.
+- **Cost if wrong:** two short CI jobs per push. A failure on `3.x` can
+  come from a new Python release rather than from a change in the lab.
+
+### R36 — Pin GitHub Actions by SHA within their current major versions
+
+**Implementation decision.**
+
+- **Decided:** the workflow pins `actions/checkout` at v4.4.0 and
+  `actions/setup-python` at v5.6.0 by commit SHA, with the tag in a
+  comment. It does not upgrade to newer major versions.
+- **Why:** a SHA cannot be moved like a tag, so what runs in CI only
+  changes with a commit. A major upgrade can change behavior and is not a
+  small fix, so it was left for a separate change.
+- **Cost if wrong:** pinned versions do not get fixes on their own;
+  someone has to update the SHAs.
+
 ### R38 — The stress-test profile is called `dev-messy`
 
 **Implementation decision** (applies the user decision
@@ -468,9 +496,39 @@ Decisions the user made without a ruling number follow after them.
 - **Cost if wrong:** pinned versions age and miss fixes until someone
   updates them. The local servers run with the user's rights, and a
   server-level allow rule allows all of a server's tools without a prompt.
-  `desktop-commander` can run shell commands, so `dev-messy` runs are not
-  bound by the shared `Bash` allow and deny lists. `npx` downloads each
-  package on first use, which counts toward the first run's duration.
+  A server that can run shell commands would therefore escape the shared
+  `Bash` allow and deny lists; R42 excludes the one that could. `npx`
+  downloads each package on first use, which counts toward the first
+  run's duration.
+
+### R42 — MCP servers keep no state outside the run and send no telemetry
+
+**Implementation decision** (2026-10-14, after checking the published npm
+packages).
+
+- **Decided:** an MCP server in a profile must not keep state outside the
+  run or send telemetry. For `dev-messy` this means:
+  - `desktop-commander` is excluded. Its telemetry is on by default, it
+    writes `~/.claude-server-commander`, `~/.claude-server-commander-logs`
+    and `~/.desktop-commander-device/device.json` in the user's home
+    directory, and its tools run any shell command outside the shared
+    `Bash` allow and deny lists.
+  - `memory` stores its file in the run's config dir
+    (`MEMORY_FILE_PATH={config}/mcp-memory.jsonl`). By default it writes
+    it into the shared npx cache, where it would carry over to the next
+    run.
+  - `context7` runs with `OTEL_SDK_DISABLED=true`.
+  - every run sets `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1` and
+    `CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1`, which covers the user-scope
+    server and the `chrome-devtools-mcp` plugin's server.
+- **Why:** state that survives a run makes the next run start from
+  something other than a fresh setup, which skews the measurement.
+  Telemetry sends data about the lab to third parties and adds network
+  calls that are not part of the task.
+- **Cost if wrong:** a new version of a server may add telemetry or state
+  that these opt-outs do not cover; the versions are pinned, so this only
+  happens when someone updates them. `dev-messy` has one overlapping
+  server fewer than planned.
 
 ## Further user decisions
 
@@ -638,10 +696,10 @@ Decisions the user made without a ruling number follow after them.
 - **Decided:** a profile with ten skill plugins and at least ten MCP
   servers, with heavy overlap, all with a developer context. The user
   asked not to be consulted on the contents; the coordinator chose them
-  (see R38 and R41).
+  (see R38, R41 and R42).
 - **Why:** real setups grow over time. The lab shows what such a setup
   adds to the context and whether the overlap changes the result.
-- **Cost if wrong:** two more tests per `run all`, each starting fifteen
+- **Cost if wrong:** two more tests per `run all`, each starting fourteen
   MCP servers, and more of the usage limit spent.
 
 ### One test on Sonnet 5 at medium effort
