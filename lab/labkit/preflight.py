@@ -12,8 +12,10 @@ from pathlib import Path
 
 CLAUDE_HINT = "run `python3 lab.py tokens claude`"
 GITHUB_HINT = "run `python3 lab.py tokens github`"
-# Files and directories Claude Code reads from parent directories.
-PROJECT_CONFIG = ("CLAUDE.md", "CLAUDE.local.md", ".claude")
+# Memory files Claude Code loads from parent directories. It reads
+# `.claude/settings*.json` only in the project directory itself, so a
+# parent's settings are not listed here.
+PARENT_MEMORY_FILES = ("CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md")
 # Where Google Chrome lives on macOS (the per-user directory is `home / "Applications"`).
 MACOS_APP_DIRS = (Path("/Applications"),)
 # Executable names of Google Chrome on PATH on other systems.
@@ -110,15 +112,15 @@ def github_unusable(cfg: dict[str, str], now: datetime) -> str | None:
 
 
 def _parent_config_warnings(sandbox: Path, home: Path) -> list[str]:
-    """Warn about project config in the sandbox's parents that Claude would pick up."""
-    own_config = home / ".claude"  # the user's Claude config dir, not project config
+    """Warn about memory files in the sandbox's parents that Claude Code would load."""
+    own_memory = home / ".claude" / "CLAUDE.md"  # the user's own memory, not project memory
     found = []
     for parent in sandbox.parents:
-        for name in PROJECT_CONFIG:
+        for name in PARENT_MEMORY_FILES:
             candidate = parent / name
-            if candidate != own_config and candidate.exists():
+            if candidate != own_memory and candidate.exists():
                 found.append(
                     f"{candidate} is in a parent directory of the sandbox "
-                    "and may be read by Claude Code, which skews token counts"
+                    "and may be loaded by Claude Code as memory, which skews token counts"
                 )
     return found
