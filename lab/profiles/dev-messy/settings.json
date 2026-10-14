@@ -38,8 +38,7 @@
       "mcp__chrome-devtools",
       "mcp__playwright",
       "mcp__git",
-      "mcp__deepwiki",
-      "mcp__microsoft-learn"
+      "mcp__deepwiki"
     ],
     "deny": [
       "Bash(cd:*)"
