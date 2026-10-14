@@ -158,26 +158,53 @@ class Check(TempDirCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn("a/CLAUDE.md", warnings[0])
 
-    def test_parent_claude_local_md_and_dir_warn(self):
+    def test_parent_claude_local_md_warns(self):
         (self.tmp / "a" / "b" / "CLAUDE.local.md").write_text("x")
-        (self.tmp / "a" / ".claude").mkdir()
         _, warnings = self.run_check()
-        self.assertEqual(len(warnings), 2)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("b/CLAUDE.local.md", warnings[0])
+
+    def test_parent_dot_claude_claude_md_warns(self):
+        (self.tmp / "a" / ".claude").mkdir()
+        (self.tmp / "a" / ".claude" / "CLAUDE.md").write_text("x")
+        _, warnings = self.run_check()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("a/.claude/CLAUDE.md", warnings[0])
+
+    def test_warning_names_memory_not_settings(self):
+        (self.tmp / "a" / "CLAUDE.md").write_text("x")
+        _, warnings = self.run_check()
+        self.assertIn("may be loaded by Claude Code as memory, which skews token counts", warnings[0])
+
+    def test_parent_dot_claude_with_only_settings_does_not_warn(self):
+        # Claude Code reads settings only from the project directory, not from parents.
+        (self.tmp / "a" / ".claude").mkdir()
+        (self.tmp / "a" / ".claude" / "settings.local.json").write_text("{}")
+        (self.tmp / "a" / ".claude" / "settings.json").write_text("{}")
+        self.assertEqual(self.run_check(), ([], []))
+
+    def test_empty_parent_dot_claude_does_not_warn(self):
+        (self.tmp / "a" / ".claude").mkdir()
+        self.assertEqual(self.run_check(), ([], []))
 
     def test_sandbox_itself_is_not_a_parent(self):
         (self.sandbox / "CLAUDE.md").write_text("x")
+        (self.sandbox / ".claude").mkdir()
+        (self.sandbox / ".claude" / "CLAUDE.md").write_text("x")
         self.assertEqual(self.run_check(), ([], []))
 
     def test_home_claude_dir_ignored(self):
         sandbox = self.home / "lab" / "sandbox"
         sandbox.mkdir(parents=True)
         (self.home / ".claude").mkdir()
+        (self.home / ".claude" / "CLAUDE.md").write_text("x")
         self.assertEqual(self.run_check(sandbox=sandbox), ([], []))
 
-    def test_other_claude_dir_in_home_still_warns(self):
+    def test_other_memory_file_in_home_still_warns(self):
         sandbox = self.home / "lab" / "sandbox"
         sandbox.mkdir(parents=True)
         (self.home / "lab" / ".claude").mkdir()
+        (self.home / "lab" / ".claude" / "CLAUDE.md").write_text("x")
         _, warnings = self.run_check(sandbox=sandbox)
         self.assertEqual(len(warnings), 1)
 
