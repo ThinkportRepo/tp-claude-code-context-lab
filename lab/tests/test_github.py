@@ -575,6 +575,56 @@ class CheckS5(TempDirCase):
         fake.delete_repo.assert_called_once_with("lab-s5check")
 
 
+    def check_with_real_files(self, fail_push: bool):
+        """Run check_s5 in a sandbox dir next to a bystander dir and a sibling test dir."""
+        sandbox = self.tmp / "sandbox"
+        sandbox.mkdir()
+        bystander = self.tmp / "keep-me"  # next to the sandbox: must survive
+        bystander.mkdir()
+        other = sandbox / "other-test"  # a sibling inside the sandbox: must survive
+        other.mkdir()
+        fake = mock.Mock(spec=github.GitHub)
+        fake.org_ok.return_value = True
+        fake.repo_exists.return_value = False
+        fake.create_repo.return_value = "https://github.com/org1/lab-s5check.git"
+        fake.pages_ok.return_value = True
+        cfg = {"LAB_GH_ORG": "org1", "GH_TOKEN": "ghu_SECRET"}
+
+        def git(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 1 if fail_push and "push" in argv else 0, "", "")
+
+        with mock.patch.object(github, "GitHub", return_value=fake), \
+             mock.patch.object(github, "configure_repo"), \
+             mock.patch.object(github.subprocess, "run", side_effect=git):
+            rows = github.check_s5(cfg, sandbox)
+        return sandbox, rows, bystander, other
+
+    def test_check_s5_removes_its_local_copy_after_success(self):
+        sandbox, rows, bystander, other = self.check_with_real_files(fail_push=False)
+        self.assertTrue(all(ok for _, ok, _ in rows), rows)
+        self.assertFalse((sandbox / github.S5_REPO).exists())
+        self.assertTrue(sandbox.is_dir() and bystander.is_dir() and other.is_dir())
+
+    def test_check_s5_removes_its_local_copy_after_a_failed_step(self):
+        sandbox, rows, bystander, other = self.check_with_real_files(fail_push=True)
+        self.assertFalse(all(ok for _, ok, _ in rows))
+        self.assertFalse((sandbox / github.S5_REPO).exists())
+        self.assertTrue(sandbox.is_dir() and bystander.is_dir() and other.is_dir())
+
+    def test_check_s5_never_removes_a_copy_that_leads_out_of_the_sandbox(self):
+        sandbox = self.tmp / "sandbox"
+        sandbox.mkdir()
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        (outside / "precious.txt").write_text("keep")
+        (sandbox / github.S5_REPO).symlink_to(outside, target_is_directory=True)
+        fake = mock.Mock(spec=github.GitHub)
+        fake.org_ok.return_value = False  # stop after the first step
+        with mock.patch.object(github, "GitHub", return_value=fake):
+            github.check_s5({"LAB_GH_ORG": "org1", "GH_TOKEN": "ghu_SECRET"}, sandbox)
+        self.assertEqual((outside / "precious.txt").read_text(), "keep")
+
+
 class CheckGithubCli(TempDirCase):
     def test_prints_table_and_returns_failure_code(self):
         self.path.write_text("LAB_GH_ORG=org1\nGH_TOKEN=ghu_T\n")
