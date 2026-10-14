@@ -436,8 +436,8 @@ revoke it, and teardown exits with status 1.
   ([revoke API](https://docs.github.com/en/rest/credentials/revoke)), which
   needs no other credential. Its answer (202 Accepted) proves nothing, so
   the lab then calls `GET /user` with the old token: 401 means revoked.
-  While the token still answers 200, the check is checked up to four
-  times, five seconds apart.
+  While the token still answers 200, it is checked up to four times, five
+  seconds apart.
 - **Claude:** there is no CLI or API to revoke a setup token
   ([anthropics/claude-code#48373](https://github.com/anthropics/claude-code/issues/48373)).
   The lab opens the claude.ai settings page that lists Claude Code tokens
