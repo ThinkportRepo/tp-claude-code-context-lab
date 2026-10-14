@@ -194,6 +194,50 @@ class Check(TempDirCase):
             self.assertNotIn("SECRETSECRET", message)
 
 
+class ChromeInstalled(TempDirCase):
+    def setUp(self):
+        super().setUp()
+        self.home = self.tmp / "home"
+        self.home.mkdir()
+        self.platform = mock.patch.object(preflight.sys, "platform", "darwin")
+        self.platform.start()
+        self.addCleanup(self.platform.stop)
+
+    @staticmethod
+    def nothing_on_path(name):
+        return None
+
+    def test_found_in_system_applications_on_macos(self):
+        app = self.tmp / "Applications" / "Google Chrome.app"
+        app.mkdir(parents=True)
+        with mock.patch.object(preflight, "MACOS_APP_DIRS", (self.tmp / "Applications",)):
+            self.assertTrue(preflight.chrome_installed(self.home, which=self.nothing_on_path))
+
+    def test_found_in_users_applications_on_macos(self):
+        (self.home / "Applications" / "Google Chrome.app").mkdir(parents=True)
+        with mock.patch.object(preflight, "MACOS_APP_DIRS", (self.tmp / "none",)):
+            self.assertTrue(preflight.chrome_installed(self.home, which=self.nothing_on_path))
+
+    def test_found_on_path_elsewhere(self):
+        with mock.patch.object(preflight.sys, "platform", "linux"):
+            for name in ("google-chrome", "google-chrome-stable", "chrome"):
+                self.assertTrue(
+                    preflight.chrome_installed(self.home, which=lambda n, want=name: f"/usr/bin/{n}" if n == want else None),
+                    name,
+                )
+
+    def test_not_found(self):
+        with mock.patch.object(preflight, "MACOS_APP_DIRS", (self.tmp / "none",)):
+            self.assertFalse(preflight.chrome_installed(self.home, which=self.nothing_on_path))
+        with mock.patch.object(preflight.sys, "platform", "linux"):
+            self.assertFalse(preflight.chrome_installed(self.home, which=self.nothing_on_path))
+
+    def test_macos_app_is_not_looked_up_on_other_systems(self):
+        (self.home / "Applications" / "Google Chrome.app").mkdir(parents=True)
+        with mock.patch.object(preflight.sys, "platform", "linux"):
+            self.assertFalse(preflight.chrome_installed(self.home, which=self.nothing_on_path))
+
+
 class Prepare(unittest.TestCase):
     @staticmethod
     def load_lab_module():
