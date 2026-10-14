@@ -111,6 +111,11 @@ class ChildEnv(TempRoot):
         self.assertEqual(env["CLAUDE_CONFIG_DIR"], str(self.p.config))
         self.assertEqual(env["CLAUDE_CODE_OAUTH_TOKEN"], "oauth-secret")
 
+    def test_child_env_opts_out_of_chrome_devtools_statistics(self):
+        env = self.env({"PATH": "/bin"})
+        self.assertEqual(env["CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS"], "1")
+        self.assertEqual(env["CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"], "1")
+
     def test_child_env_drops_the_ssh_agent(self):
         env = self.env({"SSH_AUTH_SOCK": "/tmp/agent.sock", "SSH_AGENT_PID": "42", "PATH": "/bin"})
         self.assertNotIn("SSH_AUTH_SOCK", env)

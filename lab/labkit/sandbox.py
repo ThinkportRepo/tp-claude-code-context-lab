@@ -49,6 +49,12 @@ def child_env(
     Drops every CLAUDE*/ANTHROPIC* variable so no outside login or setting
     leaks in, then pins the lab's credentials and stops git from walking up
     into the lab's own repository.
+
+    It also opts chrome-devtools-mcp out of its usage statistics (sent to
+    Google by default) and its update checks. MCP servers inherit Claude
+    Code's environment, so this covers the user-scope server and the
+    `chrome-devtools-mcp` plugin's server alike: no run phones home, and no
+    network call outside the task adds noise to the measurement.
     """
     sandbox_dir = (lab_root / "sandbox").resolve()
     env = gh_env(environ, cfg["GH_TOKEN"], sandbox_dir / ".gh")  # drops CLAUDE*/ANTHROPIC* too
@@ -56,6 +62,8 @@ def child_env(
         CLAUDE_CONFIG_DIR=str(config_dir),
         CLAUDE_CODE_OAUTH_TOKEN=cfg["CLAUDE_CODE_OAUTH_TOKEN"],
         GIT_CEILING_DIRECTORIES=str(sandbox_dir),
+        CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS="1",
+        CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS="1",
     )
     return env
 
