@@ -287,11 +287,24 @@ def configure_repo(repo_dir: Path, remote_url: str, env: Mapping[str, str], toke
     git("config", "--local", "user.email", "lab@users.noreply.github.com")
 
 
+def _remove_local_copy(repo_dir: Path, sandbox: Path) -> None:
+    """Delete repo_dir, but only if it resolves to a direct child of the sandbox.
+
+    Same rule as sandbox.paths: a symlink or path leading out of the sandbox
+    is left alone. Never raises; a leftover copy is harmless and gets wiped
+    by the next check.
+    """
+    resolved = repo_dir.resolve()
+    if resolved.name == S5_REPO and resolved.parent == sandbox.resolve():
+        shutil.rmtree(resolved, ignore_errors=True)
+
+
 def check_s5(cfg: dict[str, str], sandbox: Path) -> list[tuple[str, bool, str]]:
     """Run the whole repo lifecycle once and report each step as (step, ok, detail).
 
     Stops at the first failing step, but always deletes the test repo again
-    if it was created. `detail` never contains the token.
+    if it was created, and its local working copy under the sandbox in any
+    case. `detail` never contains the token.
     """
     org, token = cfg["LAB_GH_ORG"], cfg["GH_TOKEN"]
     gh_dir = sandbox / ".gh"
@@ -355,4 +368,5 @@ def check_s5(cfg: dict[str, str], sandbox: Path) -> list[tuple[str, bool, str]]:
     finally:
         if created:
             step("delete repo", lambda: gh.delete_repo(S5_REPO))
+        _remove_local_copy(repo_dir, sandbox)
     return rows
