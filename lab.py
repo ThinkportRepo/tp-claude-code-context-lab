@@ -8,7 +8,7 @@ First run, in this order:
   3. Set LAB_GH_ORG=<organization> in .env by hand (see .env.example).
   4. python3 lab.py tokens github          create a fine-grained GitHub token (1 day), store it
   5. python3 lab.py tokens github --check  create, push, publish and delete a test repo
-  6. python3 lab.py setup                  check GitHub access and create sandbox dirs (warns about Google Chrome for dev-stack)
+  6. python3 lab.py setup                  check GitHub access and create sandbox dirs (warns about Google Chrome for dev-stack and dev-messy)
   7. python3 lab.py run test1              run one test headless, record it in results.csv
   8. python3 lab.py report                 summarize results.csv
   9. python3 lab.py teardown --secrets     delete lab repos and sandbox, revoke the tokens
@@ -42,6 +42,8 @@ MATRIX_FILE = LAB_ROOT / "lab" / "matrix.conf"
 SANDBOX = LAB_ROOT / "sandbox"
 RUN_TIMEOUT_S = runner.RUN_TIMEOUT_S  # per-run timeout; a GitHub token must outlive it
 NEEDS_GITHUB = {"setup", "run", "session"}
+# Profiles with MCP servers that npx starts and that drive Google Chrome.
+MCP_PROFILES = {"dev-stack", "dev-messy"}
 # teardown has to work with what is left: no Claude token (it may be gone
 # already), no npx, and an expired GitHub token only skips the repo part.
 TEARDOWN = "teardown"
@@ -88,8 +90,8 @@ def prepare(command: str, args: argparse.Namespace, *, need_node: bool = False) 
 
 
 def matrix_needs_node() -> bool:
-    """True if any test in matrix.conf uses the dev-stack profile (MCP servers via npx)."""
-    return any(t.profile == "dev-stack" for t in config.load_matrix(MATRIX_FILE, os.environ))
+    """True if any test in matrix.conf uses one of MCP_PROFILES (MCP servers via npx)."""
+    return any(t.profile in MCP_PROFILES for t in config.load_matrix(MATRIX_FILE, os.environ))
 
 
 def positive_int(text: str) -> int:
@@ -224,7 +226,7 @@ def run_session(cfg: dict[str, str], test_id: str, prompt: bool) -> int:
 
 
 def run_setup(cfg: dict[str, str]) -> int:
-    """`lab.py setup`: check org access (and Chrome for dev-stack), create sandbox dirs, show the matrix."""
+    """`lab.py setup`: check org access (and Chrome for MCP_PROFILES), create sandbox dirs, show the matrix."""
     tests = _load_tests(cfg, "all")
     if tests is None:
         return 1
@@ -233,14 +235,15 @@ def run_setup(cfg: dict[str, str]) -> int:
         if not gh.org_ok():
             print(f"error: cannot read organization {cfg['LAB_GH_ORG']} with GH_TOKEN", file=sys.stderr)
             return 1
-        if any(t.profile == "dev-stack" for t in tests):
-            if not preflight.chrome_installed(Path.home()):
-                print(
-                    "warning: Google Chrome is not installed. By default the playwright plugin in the"
-                    " dev-stack profile is expected to use the installed Google Chrome, so dev-stack"
-                    " runs may fail to open a browser. Install Google Chrome to fix this.",
-                    file=sys.stderr,
-                )
+        browser_profiles = sorted({t.profile for t in tests} & MCP_PROFILES)
+        if browser_profiles and not preflight.chrome_installed(Path.home()):
+            print(
+                "warning: Google Chrome is not installed. The MCP server of the playwright plugin"
+                " uses the installed Google Chrome (verified 2026-10-14), so runs of the profile(s)"
+                f" {', '.join(browser_profiles)} may fail to open a browser. Install Google Chrome"
+                " to fix this.",
+                file=sys.stderr,
+            )
         for test in tests:
             sandbox.paths(LAB_ROOT, test.id).base.mkdir(parents=True, exist_ok=True)
         print(f"Sandbox: {SANDBOX}")
@@ -330,7 +333,7 @@ def main() -> int:
         help="start without the prompt to inspect the profile; records nothing",
     )  # fmt: skip
 
-    sub.add_parser("setup", help="check GitHub access and create sandbox dirs (warns about Google Chrome for dev-stack)")
+    sub.add_parser("setup", help="check GitHub access and create sandbox dirs (warns about Google Chrome for dev-stack and dev-messy)")
     sub.add_parser("report", help="summarize results.csv")
     td = sub.add_parser("teardown", help="delete the lab's repos and sandbox")
     td.add_argument("--secrets", action="store_true", help="also revoke the GitHub and Claude tokens")

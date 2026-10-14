@@ -284,9 +284,10 @@ class CliWiring(TempLab):
         with mock.patch.object(cli, "MATRIX_FILE", self.matrix):
             return cli.matrix_needs_node()
 
-    def test_need_node_only_with_dev_stack_in_matrix(self):
+    def test_need_node_only_with_an_mcp_profile_in_matrix(self):
         self.assertFalse(self.needs_node("test1 clean simple\ntest2 superpowers simple\n"))
         self.assertTrue(self.needs_node("test1 clean simple\ntest2 dev-stack simple\n"))
+        self.assertTrue(self.needs_node("test1 clean simple\ntest2 dev-messy simple\n"))
 
     def test_repo_matrix_needs_node(self):
         self.assertTrue(self.load_lab_module().matrix_needs_node())
