@@ -603,6 +603,20 @@ class Cli(unittest.TestCase):
         chrome.assert_not_called()
         self.assertEqual(err, "")
 
+    def test_setup_warns_without_chrome_for_dev_messy(self):
+        (code, _, err), calls, _, chrome = self.setup_cmd(chrome=False, matrix="test1 dev-messy simple\n")
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, [])
+        chrome.assert_called_once()
+        self.assertIn("Google Chrome", err)
+        self.assertIn("dev-messy", err)
+        self.assertNotIn("dev-stack", err)  # names the profiles in the matrix only
+
+    def test_chrome_warning_states_the_verified_default(self):
+        (_, _, err), _, _, _ = self.setup_cmd(chrome=False)
+        self.assertIn("uses the installed Google Chrome (verified 2026-10-14)", err)
+        self.assertNotIn("expected to", err)
+
     def test_setup_prints_the_limit_as_unknown_when_the_probe_fails(self):
         (_, out, _), _, _, _ = self.setup_cmd(probe=None)
         self.assertIn("5-hour limit: unknown", out)
