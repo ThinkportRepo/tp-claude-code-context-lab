@@ -13,7 +13,7 @@ Each entry is marked:
 The lab was built by AI coding agents under a coordinating agent, with a
 person deciding direction and running the steps that need a browser or the
 subscription (see [implementation-history.md](implementation-history.md)).
-The rulings R1–R36 and R38–R45 are numbered in the order they were made.
+The rulings R1–R36 and R38–R46 are numbered in the order they were made.
 R37 was a ruling on the review process and is not listed. Decisions the
 user made without a ruling number follow after them.
 
@@ -519,8 +519,10 @@ packages).
     run.
   - `context7` runs with `OTEL_SDK_DISABLED=true`.
   - every run sets `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1` and
-    `CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1`, which covers the user-scope
-    server and the `chrome-devtools-mcp` plugin's server.
+    `CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1`, which covers the
+    chrome-devtools-mcp server whether it comes from `mcp.json` or from a
+    plugin.
+  - the browser servers run with an in-memory profile (R46).
 - **Why:** state that survives a run makes the next run start from
   something other than a fresh setup, which skews the measurement.
   Telemetry sends data about the lab to third parties and adds network
@@ -537,7 +539,8 @@ applies R42).
 
 - **Decided:** `@executeautomation/playwright-mcp-server` is removed from
   `dev-messy`, with its allow rule. The profile keeps ten user-scope and
-  three plugin MCP servers (nine user-scope after R45).
+  three plugin MCP servers (nine user-scope after R45, two plugin
+  servers after R46).
 - **Why:** in stdio mode the server always writes
   `~/playwright-mcp-server.log` in the user's home directory and ignores
   `LOG_FILE_PATH`; the live run created that file. Moving it would need a
@@ -569,13 +572,37 @@ applies R42).
 - **Decided:** `dev-messy` no longer has a user-scope `microsoft-learn`
   server or its allow rule. The `microsoft-docs` plugin's server and its
   rule stay. The profile has nine user-scope and three plugin MCP
-  servers.
+  servers (two plugin servers after R46).
 - **Why:** both servers had the same URL, and Claude Code then drops the
-  plugin's server (observed with Claude Code 2.1.296, not documented): the
+  plugin's server (observed with Claude Code 2.1.299, not documented): the
   init events never listed `plugin:microsoft-docs:microsoft-learn`. The
   user-scope copy added no overlap; it only replaced the plugin's server.
 - **Cost if wrong:** none for the measurement: the same server stays
   loaded through the plugin.
+
+### R46 — Browser MCP servers run with an in-memory profile
+
+**Implementation decision** (2026-10-14, after a review of the branch;
+applies R42).
+
+- **Decided:** the user-scope `playwright` and `chrome-devtools` servers of
+  `dev-messy` run with `--isolated`. Every run sets
+  `PLAYWRIGHT_MCP_ISOLATED=1`, so the `playwright` plugin's server runs
+  isolated too, in `dev-stack` and `dev-messy`. The `chrome-devtools-mcp`
+  plugin is removed from `dev-messy` with its allow rule. The profile has
+  ten skill plugins and two MCP plugins, so nine user-scope and two plugin
+  MCP servers.
+- **Why:** by default both servers keep a persistent browser profile in
+  the user's home directory (`@playwright/mcp` under
+  `~/Library/Caches/ms-playwright-mcp/` on macOS, `chrome-devtools-mcp` in
+  `~/.cache/chrome-devtools-mcp/chrome-profile`). Browser cache, cookies
+  and history would carry over from one run of a test to the next, and two
+  copies of a server would lock each other's profile. The lab cannot
+  change the plugin's args, and `chrome-devtools-mcp` has no environment
+  switch for isolation, so that plugin had to go.
+- **Cost if wrong:** one browser overlap less in the stress test. A future
+  version of a server may change its default or the meaning of
+  `--isolated`.
 
 ## Further user decisions
 
@@ -743,10 +770,10 @@ applies R42).
 - **Decided:** a profile with ten skill plugins and at least ten MCP
   servers, with heavy overlap, all with a developer context. The user
   asked not to be consulted on the contents; the coordinator chose them
-  (see R38 and R41–R45).
+  (see R38 and R41–R46).
 - **Why:** real setups grow over time. The lab shows what such a setup
   adds to the context and whether the overlap changes the result.
-- **Cost if wrong:** two more tests per `run all`, each starting twelve
+- **Cost if wrong:** two more tests per `run all`, each starting eleven
   MCP servers, and more of the usage limit spent.
 
 ### One test on Sonnet 5 at medium effort
