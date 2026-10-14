@@ -212,7 +212,10 @@ workspace (on macOS under `~/Library/Caches/ms-playwright-mcp/`),
 `~/.cache/chrome-devtools-mcp/chrome-profile`. Browser cache, cookies and
 history would then carry over from one run of a test to the next, and
 two copies of a server would lock each other's profile. With
-`--isolated` the profile stays in memory. The user-scope servers get the
+`--isolated` each server start gets a fresh browser profile:
+`@playwright/mcp` keeps it in memory, `chrome-devtools-mcp` creates a
+temporary directory and deletes it when the browser closes. Nothing is
+reused by the next run. The user-scope servers get the
 flag in `mcp.json`; for the `playwright` plugin's server, whose args the
 lab cannot change, every run sets `PLAYWRIGHT_MCP_ISOLATED=1`, which
 covers `dev-stack` too. The `chrome-devtools-mcp` plugin was removed from
@@ -371,6 +374,13 @@ contains only:
   has any.
 
 Nothing is read from or written to the user's own Claude config.
+
+Claude runs in `sandbox/<test>` itself, and what it writes there outside
+`xyz/` (a helper script, `.playwright-mcp/` snapshots) would still be
+there for the next run. So before each run, headless or interactive, the
+lab removes every entry in `sandbox/<test>` except `config/`, `results/`,
+`xyz/` and the `.git` boundary file (R47). `sandbox/` belongs to the lab:
+a file put there by hand is deleted too.
 
 Listing plugins in `enabledPlugins` alone does not install them in a fresh
 config dir: headless Claude Code fetches the marketplace but installs
@@ -616,10 +626,12 @@ or a repository could not be deleted, because a second teardown needs it.
    no CLI command to read the limit without an API call; the probe costs
    one small Haiku call, and the run under test never sees it. Its value is
    the run's `limit_5h_start_pct`.
-3. **Reset** — rebuild `sandbox/<test>/config` from the profile and install
-   its plugins; delete the GitHub repository `lab-<test>` if present and
-   recreate it (public, Pages off); re-initialize `sandbox/<test>/xyz` with
-   the remote set and no commits.
+3. **Reset** — remove an earlier run's leftovers in `sandbox/<test>`
+   (every entry except `config/`, `results/`, `xyz/` and the `.git`
+   boundary file; R47); rebuild `sandbox/<test>/config` from the profile
+   and install its plugins; delete the GitHub repository `lab-<test>` if
+   present and recreate it (public, Pages off); re-initialize
+   `sandbox/<test>/xyz` with the remote set and no commits.
 4. **First turn** — `claude -p "<prompt>" --model <model> [--effort
    <effort>] --permission-mode default --output-format stream-json
    --verbose` in `sandbox/<test>`.
