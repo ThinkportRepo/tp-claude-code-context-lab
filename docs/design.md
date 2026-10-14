@@ -110,7 +110,7 @@ with Claude Code, so no extra marketplace is needed.
 | `clean` | none |
 | `superpowers` | `superpowers` |
 | `dev-stack` | `superpowers`, `frontend-design`, `microsoft-docs`, `playwright` |
-| `dev-messy` | ten skill plugins and three MCP plugins (three plugin servers), plus eleven user-scope MCP servers (see [dev-messy](#dev-messy)) |
+| `dev-messy` | ten skill plugins and three MCP plugins (three plugin servers), plus ten user-scope MCP servers (see [dev-messy](#dev-messy)) |
 
 `dev-stack` stands for a typical developer setup, built from the most
 installed plugins in the official marketplace. Install counts and token
@@ -141,7 +141,7 @@ Rejected for `dev-stack`:
 
 Every profile's `settings.json` holds the plugin list (`enabledPlugins`) and
 the shared permission lists (see [Permissions](#permissions)). `dev-stack`
-also allows its two MCP servers, `dev-messy` its fourteen.
+also allows its two MCP servers, `dev-messy` its thirteen.
 
 A profile can also have an `mcp.json` with MCP servers that no plugin
 ships, in the format `{"mcpServers": {"<name>": {...}}}`. The lab writes
@@ -183,16 +183,16 @@ to an exact version that is published and not deprecated on npm (checked
 | `context7` | `@upstash/context7-mcp@4.4.1`, telemetry off |
 | `chrome-devtools` | `chrome-devtools-mcp@1.10.1`, usage statistics off |
 | `playwright` | `@playwright/mcp@0.0.83` |
-| `playwright-automation` | `@executeautomation/playwright-mcp-server@1.0.12` |
 | `git` | `@cyanheads/git-mcp-server@2.15.3` |
 | `deepwiki` | `https://mcp.deepwiki.com/mcp` (HTTP, no auth) |
 | `microsoft-learn` | `https://learn.microsoft.com/api/mcp` (HTTP, the same server as the `microsoft-docs` plugin) |
 
-The overlap is deliberate: four browser servers (two `playwright`, two
-`chrome-devtools`), four docs and lookup servers (`context7`, `deepwiki`,
-two `microsoft-learn`), a `git` server next to the `git` and `gh` CLIs,
-and `filesystem` next to the built-in file tools. `chrome-devtools-mcp` was rejected for `dev-stack` because of
-exactly this overlap. `context7` was rejected there because the remote
+The overlap is deliberate: four browser servers (`playwright` and
+`chrome-devtools`, each as a plugin and as a user-scope server), four
+docs and lookup servers (`context7`, `deepwiki`, two `microsoft-learn`),
+a `git` server next to the `git` and `gh` CLIs, and `filesystem` next to
+the built-in file tools. `chrome-devtools-mcp` was rejected for
+`dev-stack` because of exactly this overlap. `context7` was rejected there because the remote
 server needs an OAuth login; `dev-messy` runs the npm package locally,
 which needs none.
 
@@ -212,6 +212,9 @@ in the published npm packages, 2026-10-14):
 - `desktop-commander` is excluded: its telemetry is on by default, it
   writes state into the user's home directory, and its tools run any
   shell command outside the shared `Bash` allow and deny lists.
+- `playwright-automation` (`@executeautomation/playwright-mcp-server`) is
+  excluded (R43): in stdio mode it always writes
+  `~/playwright-mcp-server.log` in the user's home directory.
 
 ### Model
 
@@ -686,6 +689,7 @@ to the run.
 | `status` | `ok`, `failed`, `timeout`, `denied` |
 | `api_equiv_usd` | API-equivalent cost, reference only, from `totalCostUSD` |
 | `plugin_versions` | installed plugin versions |
+| `mcp_connected` | MCP servers connected at the start of a headless run, `<connected>/<total>`, from the first turn's first `system`/`init` event; empty without MCP servers or without that event (interactive sessions) |
 
 `limit_5h_end_pct` comes from the last rate-limit event of a headless run,
 or from the last status-line data of an interactive session.
@@ -724,6 +728,16 @@ or from the last status-line data of an interactive session.
   start. Claude Code loads a tool's definition through `ToolSearch` when it
   is needed, which is why an MCP server adds little to the starting
   context.
+- **MCP servers start late in headless runs.** Headless Claude Code does
+  not wait for every MCP server before its first API request (live
+  `test7` run, 2026-10-14, Claude Code 2.1.296). Turn 1 had 4 of 13
+  servers connected: the plugin servers and the two HTTP servers, while
+  every `npx` server was still pending on a cold npx cache. Turns 2 and 3
+  had 10 of 13, a different subset each time. So `ctx_start` of a profile
+  with many MCP servers depends on startup timing, and servers that
+  connect later add tools during the run. The first run on a cold npx
+  cache is the slowest. `mcp_connected` records the count at the start,
+  and the report shows it (R44).
 - **Base contexts differ by mode.** In early tests (spikes, 2026-10-12,
   `claude-haiku-5-5`), an interactive session started at about 31.1 k tokens
   and a headless one at about 18.8 k, for the same model and an empty
@@ -745,7 +759,9 @@ heading is `[headless / claude-haiku-5-5]`.
 
 1. **Runs** — per profile and prompt: `n` runs, `ok` (status ok), `goal`
    (runs with `goal_ok`), and `ctx_start`, `ctx_growth`, `tokens_out`,
-   `cache_read`, `limit_used` (5-hour limit end minus start).
+   `cache_read`, `limit_used` (5-hour limit end minus start). If a
+   group's runs recorded `mcp_connected`, a line below the row shows it,
+   for example `MCP servers connected at start: 4/13–10/13`.
 2. **Starting point and growth per context** — per profile and model
    (with the effort after the model, if set):
    start and growth of the interactive main session, the headless main
