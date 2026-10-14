@@ -181,9 +181,9 @@ class TestMcpConnectedLine(unittest.TestCase):
         self.assertIn("MCP servers connected at start: 4/13", lines[at + 1])
 
     def test_range_over_repeats(self):
-        rows = [row(mcp_connected=v) for v in ("10/13", "4/13", "", "10/13")]
+        rows = [row(mcp_connected=v) for v in ("9/13", "4/13", "", "9/13")]
         (line,) = [l for l in self.summary(rows) if "MCP" in l]
-        self.assertEqual(line.strip(), "MCP servers connected at start: 4/13–10/13")
+        self.assertEqual(line.strip(), "MCP servers connected at start: 4/13–9/13")
 
     def test_no_line_without_values(self):
         for rows in ([row()], [row(mcp_connected="")], [row(mcp_connected=None)]):
