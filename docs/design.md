@@ -110,7 +110,7 @@ with Claude Code, so no extra marketplace is needed.
 | `clean` | none |
 | `superpowers` | `superpowers` |
 | `dev-stack` | `superpowers`, `frontend-design`, `microsoft-docs`, `playwright` |
-| `dev-messy` | ten skill plugins, three MCP plugins, twelve user-scope MCP servers (see [dev-messy](#dev-messy)) |
+| `dev-messy` | ten skill plugins and three MCP plugins (three plugin servers), plus eleven user-scope MCP servers (see [dev-messy](#dev-messy)) |
 
 `dev-stack` stands for a typical developer setup, built from the most
 installed plugins in the official marketplace. Install counts and token
@@ -141,14 +141,16 @@ Rejected for `dev-stack`:
 
 Every profile's `settings.json` holds the plugin list (`enabledPlugins`) and
 the shared permission lists (see [Permissions](#permissions)). `dev-stack`
-also allows its two MCP servers, `dev-messy` its fifteen.
+also allows its two MCP servers, `dev-messy` its fourteen.
 
 A profile can also have an `mcp.json` with MCP servers that no plugin
 ships, in the format `{"mcpServers": {"<name>": {...}}}`. The lab writes
 them as top-level `mcpServers` into the run's fresh `.claude.json`, which
 is where Claude Code keeps user-scope servers (the scope that
-`claude mcp add --scope user` writes). `{work}` in a server's args is
-replaced with the test's work dir, `sandbox/<test>`. These servers need
+`claude mcp add --scope user` writes). In a server's `args` and in the
+values of its `env`, `{work}` is replaced with the test's work dir,
+`sandbox/<test>`, and `{config}` with the run's fresh config dir,
+`sandbox/<test>/config`. These servers need
 no install step: `npx` fetches them when the session starts. A missing
 file means no servers; an invalid one stops the run before the config
 dir is touched. Only `dev-messy` has an `mcp.json`.
@@ -175,26 +177,41 @@ to an exact version that is published and not deprecated on npm (checked
 | Server | Package or URL |
 |---|---|
 | `filesystem` | `@modelcontextprotocol/server-filesystem@1.0.0`, limited to `{work}` |
-| `memory` | `@modelcontextprotocol/server-memory@1.0.0` |
+| `memory` | `@modelcontextprotocol/server-memory@1.0.0`, memory file in `{config}` |
 | `sequential-thinking` | `@modelcontextprotocol/server-sequential-thinking@1.0.0` |
 | `everything` | `@modelcontextprotocol/server-everything@1.0.0` |
-| `context7` | `@upstash/context7-mcp@4.4.1` |
-| `chrome-devtools` | `chrome-devtools-mcp@1.10.1` |
+| `context7` | `@upstash/context7-mcp@4.4.1`, telemetry off |
+| `chrome-devtools` | `chrome-devtools-mcp@1.10.1`, usage statistics off |
 | `playwright` | `@playwright/mcp@0.0.83` |
 | `playwright-automation` | `@executeautomation/playwright-mcp-server@1.0.12` |
 | `git` | `@cyanheads/git-mcp-server@2.15.3` |
-| `desktop-commander` | `@wonderwhy-er/desktop-commander@0.3.0` |
 | `deepwiki` | `https://mcp.deepwiki.com/mcp` (HTTP, no auth) |
 | `microsoft-learn` | `https://learn.microsoft.com/api/mcp` (HTTP, the same server as the `microsoft-docs` plugin) |
 
 The overlap is deliberate: four browser servers (two `playwright`, two
 `chrome-devtools`), four docs and lookup servers (`context7`, `deepwiki`,
 two `microsoft-learn`), a `git` server next to the `git` and `gh` CLIs,
-and `filesystem` and `desktop-commander` next to the built-in file and
-Bash tools. `chrome-devtools-mcp` was rejected for `dev-stack` because of
+and `filesystem` next to the built-in file tools. `chrome-devtools-mcp` was rejected for `dev-stack` because of
 exactly this overlap. `context7` was rejected there because the remote
 server needs an OAuth login; `dev-messy` runs the npm package locally,
 which needs none.
+
+No server may keep state outside the run or send telemetry (R42; checked
+in the published npm packages, 2026-10-14):
+
+- `memory` would store `memory.jsonl` in the shared npx cache, so memory
+  would carry over between runs. `MEMORY_FILE_PATH` puts it in the config
+  dir, which every run recreates and which is not part of the test repo.
+- `context7` runs OpenTelemetry metrics unless `OTEL_SDK_DISABLED=true`,
+  which its `env` sets.
+- `chrome-devtools-mcp` sends usage statistics to Google and checks for
+  updates. The lab sets `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1` and
+  `CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1` in every run's environment,
+  which MCP servers inherit, so the user-scope server and the plugin's
+  server are both covered.
+- `desktop-commander` is excluded: its telemetry is on by default, it
+  writes state into the user's home directory, and its tools run any
+  shell command outside the shared `Bash` allow and deny lists.
 
 ### Model
 
