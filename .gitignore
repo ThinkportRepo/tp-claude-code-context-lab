@@ -1,0 +1,65 @@
+# --- OS ---
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+
+# --- Editors / IDEs ---
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+*~
+
+# --- Secrets & local config (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.*
+
+# --- Logs & temp ---
+*.log
+logs/
+tmp/
+.cache/
+
+# --- Build output / dependencies ---
+dist/
+build/
+out/
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# --- Infrastructure as Code ---
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+!*.tfvars.example
+.terraform.tfstate.lock.info
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# --- Claude Code (local, per-user settings) ---
+.claude/settings.local.json
+
+# --- Claude Code Context Lab (local test runs) ---
+sandbox/
+results.csv
+results-*.csv
+
+# --- Local agent workspace ---
+.superpowers/

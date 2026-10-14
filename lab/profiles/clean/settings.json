@@ -1,0 +1,21 @@
+{
+  "enabledPlugins": {},
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "WebFetch",
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(curl:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(pwd)",
+      "Bash(mkdir:*)"
+    ],
+    "deny": [
+      "Bash(cd:*)"
+    ]
+  }
+}

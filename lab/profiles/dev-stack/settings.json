@@ -1,0 +1,28 @@
+{
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "microsoft-docs@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "WebFetch",
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(curl:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(pwd)",
+      "Bash(mkdir:*)",
+      "mcp__plugin_playwright_playwright",
+      "mcp__plugin_microsoft-docs_microsoft-learn"
+    ],
+    "deny": [
+      "Bash(cd:*)"
+    ]
+  }
+}
