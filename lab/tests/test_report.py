@@ -38,6 +38,9 @@ class TestResultsFile(unittest.TestCase):
     def test_effort_follows_model(self):
         self.assertEqual(results.FIELDS[results.FIELDS.index("model") + 1], "effort")
 
+    def test_mcp_connected_is_the_last_column(self):
+        self.assertEqual(results.FIELDS[-2:], ("plugin_versions", "mcp_connected"))
+
     def test_append_rejects_unknown_field(self):
         with self.assertRaises(ValueError):
             results.append(self.path, {"mode": "headless", "bogus": 1})
@@ -161,6 +164,31 @@ class TestEffort(unittest.TestCase):
         points = {(p["profile"], p["model"]): p for p in report.starting_points(rows)}
         self.assertEqual(points[("clean", "m1")]["headless_ctx_start"], 10)
         self.assertEqual(points[("clean", "m1 / max")]["headless_ctx_start"], 20)
+
+
+class TestMcpConnectedLine(unittest.TestCase):
+    @staticmethod
+    def summary(rows):
+        """Lines of the first table: up to the starting-point title."""
+        lines = report.render(rows).splitlines()
+        return lines[: next(i for i, l in enumerate(lines) if l.startswith("Starting point"))]
+
+    def test_line_per_group_with_a_value(self):
+        rows = [row(profile="dev-messy", mcp_connected="4/13"), row(mcp_connected="")]
+        lines = self.summary(rows)
+        self.assertEqual([l.strip() for l in lines if "MCP" in l], ["MCP servers connected at start: 4/13"])
+        at = next(i for i, l in enumerate(lines) if l.startswith("dev-messy"))
+        self.assertIn("MCP servers connected at start: 4/13", lines[at + 1])
+
+    def test_range_over_repeats(self):
+        rows = [row(mcp_connected=v) for v in ("10/13", "4/13", "", "10/13")]
+        (line,) = [l for l in self.summary(rows) if "MCP" in l]
+        self.assertEqual(line.strip(), "MCP servers connected at start: 4/13–10/13")
+
+    def test_no_line_without_values(self):
+        for rows in ([row()], [row(mcp_connected="")], [row(mcp_connected=None)]):
+            with self.subTest(rows=rows):
+                self.assertNotIn("MCP", report.render(rows))
 
 
 class TestStartingPoints(unittest.TestCase):

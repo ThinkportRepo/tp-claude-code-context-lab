@@ -16,7 +16,7 @@ from . import results
 KEY = ("mode", "model", "effort", "profile", "prompt")
 NON_NUMERIC = {
     "timestamp", "test", "mode", "model", "effort", "profile", "prompt", "status",
-    "goal_ok", "plugin_versions",
+    "goal_ok", "plugin_versions", "mcp_connected",
 }  # fmt: skip
 NUMERIC = tuple(f for f in results.FIELDS if f not in NON_NUMERIC)
 # Columns of the summary table, in order, after profile/prompt/n/ok/goal.
@@ -91,6 +91,8 @@ def summarize(rows: list[dict]) -> list[dict]:
     true), and for every numeric field plus `limit_used` (5-hour limit end
     minus start) and `tokens_total` (the four token kinds added up per run)
     a {"median", "min", "max"} dict, or None if no run has a value.
+    `mcp_connected` is the range of MCP servers connected at start
+    ("4/13" or "4/13–10/13"), "" if no run recorded it.
     """
     out = []
     for key, members in _grouped(rows, KEY):
@@ -102,6 +104,7 @@ def summarize(rows: list[dict]) -> list[dict]:
             g[field] = _stats([_num(r.get(field)) for r in members])
         g["limit_used"] = _stats([_limit_used(r) for r in members])
         g["tokens_total"] = _stats([_tokens_total(r) for r in members])
+        g["mcp_connected"] = _mcp_range(members)
         out.append(g)
     return out
 
@@ -135,6 +138,20 @@ def starting_points(rows: list[dict]) -> list[dict]:
 
 def _with_effort(model: str, effort: str) -> str:
     return f"{model} / {effort}" if effort else model
+
+
+def _mcp_range(members: list[dict]) -> str:
+    """MCP servers connected at start over a group's runs: "4/13", "4/13–10/13", or ""."""
+    values = set()
+    for r in members:
+        connected, _, total = str(r.get("mcp_connected") or "").partition("/")
+        if connected.isdigit() and total.isdigit() and int(total) > 0:
+            values.add((int(connected) / int(total), int(connected), int(total)))
+    if not values:
+        return ""
+    low, high = min(values), max(values)
+    text = f"{low[1]}/{low[2]}"
+    return text if low == high else f"{text}–{high[1]}/{high[2]}"
 
 
 def _section(g: dict) -> str:
@@ -181,14 +198,17 @@ def _table(header: list[str], rows: list[list[str]], left: int, sep: str = "  ")
     return lines
 
 
-def _sectioned(header: list[str], body: list[tuple[str, list[str]]], left: int) -> list[str]:
+def _sectioned(header: list[str], body: list[tuple[str, list[str] | str]], left: int) -> list[str]:
     """A table with a `[section]` line before each new section of `body`."""
     # One column grid for the whole table so sections line up.
     # Single-space gaps: the range cells are wide and the table must fit ~120 columns.
-    table = _table(header, [cells for _, cells in body], left=left, sep=" ")
+    table = _table(header, [cells for _, cells in body if not isinstance(cells, str)], left=left, sep=" ")
     lines = [table[0], "-" * len(table[0])]
     previous = None
-    for (section, _), line in zip(body, table[1:]):
+    rows = iter(table[1:])
+    for section, cells in body:
+        # A string instead of cells is a note line under the previous row, outside the grid.
+        line = f"  {cells}" if isinstance(cells, str) else next(rows)
         if section != previous:
             if previous is not None:
                 lines.append("")
@@ -206,6 +226,8 @@ def _summary_lines(rows: list[dict]) -> list[str]:
             g["profile"], g["prompt"], str(g["n"]), str(g["ok"]), str(g["goal_ok"]),
             *(_cell(g[f], g["n"]) for f in SHOWN),
         ]))  # fmt: skip
+        if g["mcp_connected"]:
+            body.append((section, f"MCP servers connected at start: {g['mcp_connected']}"))
     return _sectioned(["profile", "prompt", "n", "ok", "goal", *SHOWN], body, left=2)
 
 

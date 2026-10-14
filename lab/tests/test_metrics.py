@@ -364,9 +364,47 @@ class TestStreamInfo(unittest.TestCase):
                 info = metrics.stream_info(files)
                 self.assertEqual(
                     set(info),
-                    {"session_id", "limit_5h_end_pct", "denied", "result_totals"},
+                    {"session_id", "limit_5h_end_pct", "denied", "result_totals", "mcp_connected"},
                 )
+                self.assertEqual(info.pop("mcp_connected"), "")
                 self.assertTrue(all(v is None for v in info.values()), info)
+
+
+class TestMcpConnected(unittest.TestCase):
+    """`mcp_connected` from the first `system`/`init` event of the first stream file."""
+
+    @staticmethod
+    def init(*statuses):
+        servers = [{"name": f"s{i}", "status": status} for i, status in enumerate(statuses)]
+        return json.dumps({"type": "system", "subtype": "init", "session_id": "s", "mcp_servers": servers})
+
+    def connected(self, *files_lines):
+        with tempfile.TemporaryDirectory() as tmp:
+            files = []
+            for i, lines in enumerate(files_lines):
+                f = Path(tmp) / f"stream-{i + 1}.jsonl"
+                f.write_text("".join(line + "\n" for line in lines))
+                files.append(f)
+            return metrics.stream_info(files)["mcp_connected"]
+
+    def test_connected_pending_mix(self):
+        line = self.init("connected", "pending", "connected", "failed", "pending")
+        self.assertEqual(self.connected([line]), "2/5")
+
+    def test_first_init_of_the_first_turn_only(self):
+        first, later = self.init("connected", "pending"), self.init("connected", "connected")
+        self.assertEqual(self.connected([first, later], [self.init("connected")]), "1/2")
+        # The second turn's init does not count, even when the first turn has none.
+        self.assertEqual(self.connected(['{"type": "result"}'], [later]), "")
+
+    def test_no_servers_is_empty(self):
+        self.assertEqual(self.connected([self.init()]), "")
+        no_key = json.dumps({"type": "system", "subtype": "init", "session_id": "s"})
+        self.assertEqual(self.connected([no_key]), "")
+
+    def test_no_init_event_is_empty(self):
+        other = json.dumps({"type": "system", "subtype": "status", "mcp_servers": [{"status": "connected"}]})
+        self.assertEqual(self.connected([other, '{"type": "result"}']), "")
 
 
 if __name__ == "__main__":
