@@ -249,6 +249,23 @@ class ProfileMcpServers(TempRoot):
         self.assertIn(" ", str(self.p.work))  # one argument, even with a space in the path
         self.assertIn("projects", state)  # the seeded state is kept
 
+    def test_placeholders_replaced_in_args_and_env(self):
+        self.write_mcp(json.dumps({"mcpServers": {
+            "mem": {
+                "type": "stdio", "command": "npx",
+                "args": ["--root={work}", "--state={config}/s", 3],
+                "env": {"MEMORY_FILE_PATH": "{config}/mcp-memory.jsonl", "WORK": "{work}", "N": 1},
+            },
+            "plain": {"type": "stdio", "command": "npx", "args": ["-y", "x@1.0.0"]},
+        }}))
+        servers = self.build()["mcpServers"]
+        work, cfg = str(self.p.work), str(self.p.config)
+        self.assertEqual(servers["mem"]["args"], [f"--root={work}", f"--state={cfg}/s", 3])
+        self.assertEqual(servers["mem"]["env"], {
+            "MEMORY_FILE_PATH": f"{cfg}/mcp-memory.jsonl", "WORK": work, "N": 1,
+        })
+        self.assertNotIn("env", servers["plain"])  # no env in mcp.json: none written
+
     def test_invalid_mcp_file_stops_before_anything_is_deleted(self):
         self.p.config.mkdir(parents=True)
         (self.p.config / "keep.txt").write_text("keep")
