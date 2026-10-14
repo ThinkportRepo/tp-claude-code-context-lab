@@ -91,6 +91,68 @@ class OutsideSandbox(TempRoot):
         self.assertFalse((self.victim / ".git").exists())
 
 
+class ClearWorkDir(TempRoot):
+    """Leftovers of an earlier run in sandbox/<test> are removed before the next one."""
+
+    def setUp(self):
+        super().setUp()
+        self.outside = Path(self.dir.name).resolve() / "outside"
+        self.outside.mkdir()
+        (self.outside / "target.txt").write_text("keep")
+        w = self.p.work
+        for keep in (self.p.config, self.p.results / "20261014T000000Z", self.p.repo):
+            keep.mkdir(parents=True)
+            (keep / "keep.txt").write_text("keep")
+        (w / ".git").write_text("gitdir: /nonexistent\n")
+        (w / "poll-pages.sh").write_text("#!/bin/sh\n")
+        (w / ".playwright-mcp").mkdir()
+        (w / ".playwright-mcp" / "page.yml").write_text("snapshot")
+        (w / "link").symlink_to(self.outside)
+        (w / "file-link").symlink_to(self.outside / "target.txt")
+        self.other = sandbox.paths(self.lab_root, "t2")
+        self.other.work.mkdir(parents=True)
+        (self.other.work / "poll-pages.sh").write_text("other test")
+
+    def assert_cleared(self, kept=("config", "results/20261014T000000Z", "xyz")):
+        names = sorted(e.name for e in self.p.work.iterdir())
+        self.assertEqual(names, [".git", "config", "results", "xyz"])
+        for keep in (self.p.work / k for k in kept):
+            self.assertEqual((keep / "keep.txt").read_text(), "keep")
+        self.assertEqual((self.outside / "target.txt").read_text(), "keep")  # symlink removed, not its target
+        self.assertEqual((self.other.work / "poll-pages.sh").read_text(), "other test")
+
+    def test_clear_work_dir_keeps_only_the_lab_entries(self):
+        sandbox.clear_work_dir(self.lab_root, self.test.id)
+        self.assert_cleared()
+        self.assertEqual((self.p.work / ".git").read_text(), "gitdir: /nonexistent\n")
+
+    def test_build_config_clears_the_work_dir(self):
+        sandbox.build_config(self.lab_root, self.test, self.p, self.p.base / "status.json")
+        self.assert_cleared(kept=("results/20261014T000000Z", "xyz"))  # config/ is rebuilt
+
+    def test_missing_work_dir_is_fine(self):
+        sandbox.clear_work_dir(self.lab_root, "t3")
+        self.assertFalse(sandbox.paths(self.lab_root, "t3").work.exists())
+
+    def test_refuses_a_test_id_outside_the_sandbox(self):
+        for bad in ("../outside", str(self.outside)):
+            with self.subTest(test_id=bad), self.assertRaises(ValueError):
+                sandbox.clear_work_dir(self.lab_root, bad)
+        self.assertEqual((self.outside / "target.txt").read_text(), "keep")
+
+    def test_refuses_a_work_dir_that_is_a_symlink_out_of_the_sandbox(self):
+        (self.lab_root / "sandbox" / "t9").symlink_to(self.outside)
+        with self.assertRaises(ValueError):
+            sandbox.clear_work_dir(self.lab_root, "t9")
+        self.assertEqual((self.outside / "target.txt").read_text(), "keep")
+
+    def test_invalid_profile_file_deletes_nothing(self):
+        (self.lab_root / "lab" / "profiles" / "clean" / "mcp.json").write_text("{not json")
+        with self.assertRaises(ValueError):
+            sandbox.build_config(self.lab_root, self.test, self.p, self.p.base / "status.json")
+        self.assertTrue((self.p.work / "poll-pages.sh").exists())
+
+
 class ChildEnv(TempRoot):
     def env(self, environ):
         return sandbox.child_env(environ, self.lab_root, self.p.config, CFG)
