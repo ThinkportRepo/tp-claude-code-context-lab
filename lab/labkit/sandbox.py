@@ -52,9 +52,15 @@ def child_env(
 
     It also opts chrome-devtools-mcp out of its usage statistics (sent to
     Google by default) and its update checks. MCP servers inherit Claude
-    Code's environment, so this covers the user-scope server and the
-    `chrome-devtools-mcp` plugin's server alike: no run phones home, and no
-    network call outside the task adds noise to the measurement.
+    Code's environment, so this covers a user-scope server and a plugin's
+    server alike: no run phones home, and no network call outside the task
+    adds noise to the measurement.
+
+    `PLAYWRIGHT_MCP_ISOLATED=1` is the environment form of `@playwright/mcp`'s
+    `--isolated`: an in-memory browser profile instead of a persistent one
+    under the user's home directory, keyed by the work dir. Without it, the
+    `playwright` plugin's server (whose args the lab cannot set) would carry
+    browser cache, cookies and history from one run of a test to the next.
     """
     sandbox_dir = (lab_root / "sandbox").resolve()
     env = gh_env(environ, cfg["GH_TOKEN"], sandbox_dir / ".gh")  # drops CLAUDE*/ANTHROPIC* too
@@ -64,6 +70,7 @@ def child_env(
         GIT_CEILING_DIRECTORIES=str(sandbox_dir),
         CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS="1",
         CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS="1",
+        PLAYWRIGHT_MCP_ISOLATED="1",
     )
     return env
 

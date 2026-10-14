@@ -116,6 +116,10 @@ class ChildEnv(TempRoot):
         self.assertEqual(env["CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS"], "1")
         self.assertEqual(env["CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"], "1")
 
+    def test_child_env_runs_playwright_mcp_isolated(self):
+        # In-memory browser profile: covers the playwright plugin's server, whose args the lab cannot set.
+        self.assertEqual(self.env({"PATH": "/bin"})["PLAYWRIGHT_MCP_ISOLATED"], "1")
+
     def test_child_env_drops_the_ssh_agent(self):
         env = self.env({"SSH_AUTH_SOCK": "/tmp/agent.sock", "SSH_AGENT_PID": "42", "PATH": "/bin"})
         self.assertNotIn("SSH_AUTH_SOCK", env)
