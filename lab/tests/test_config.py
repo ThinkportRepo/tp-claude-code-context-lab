@@ -224,7 +224,8 @@ class Profiles(unittest.TestCase):
             "superpowers", "frontend-design", "code-review", "pr-review-toolkit", "code-simplifier",
             "feature-dev", "commit-commands", "claude-md-management", "skill-creator", "claude-code-setup",
         )  # fmt: skip
-        mcp = ("playwright", "microsoft-docs", "chrome-devtools-mcp")
+        # No chrome-devtools-mcp plugin: its browser profile in the home dir cannot be isolated (R46).
+        mcp = ("playwright", "microsoft-docs")
         enabled = config.profile_settings(REPO, "dev-messy")["enabledPlugins"]
         self.assertEqual(list(enabled), [n + market for n in skills + mcp])
         self.assertTrue(all(v is True for v in enabled.values()))
@@ -241,8 +242,9 @@ class Profiles(unittest.TestCase):
             "sequential-thinking": npx("@modelcontextprotocol/server-sequential-thinking@1.0.0"),
             "everything": npx("@modelcontextprotocol/server-everything@1.0.0"),
             "context7": npx("@upstash/context7-mcp@4.4.1") | {"env": {"OTEL_SDK_DISABLED": "true"}},
-            "chrome-devtools": npx("chrome-devtools-mcp@1.10.1"),
-            "playwright": npx("@playwright/mcp@0.0.83"),
+            # --isolated: an in-memory browser profile, nothing kept outside the run (R46).
+            "chrome-devtools": npx("chrome-devtools-mcp@1.10.1", "--isolated"),
+            "playwright": npx("@playwright/mcp@0.0.83", "--isolated"),
             "git": npx("@cyanheads/git-mcp-server@2.15.3"),
             "deepwiki": {"type": "http", "url": "https://mcp.deepwiki.com/mcp"},
         })  # fmt: skip
@@ -256,7 +258,6 @@ class Profiles(unittest.TestCase):
             [
                 "mcp__plugin_playwright_playwright",
                 "mcp__plugin_microsoft-docs_microsoft-learn",
-                "mcp__plugin_chrome-devtools-mcp_chrome-devtools",
                 *(f"mcp__{name}" for name in servers),
             ],
         )
