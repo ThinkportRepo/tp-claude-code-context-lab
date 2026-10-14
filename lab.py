@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Claude Code Context Lab: run Claude Code against real GitHub repos and measure
-context size and token use per profile, prompt and model.
+context size and token use per profile, prompt, model and effort.
 
 First run, in this order:
   1. Create a new, empty GitHub organization in which you are an admin.

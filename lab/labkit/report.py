@@ -92,7 +92,7 @@ def summarize(rows: list[dict]) -> list[dict]:
     minus start) and `tokens_total` (the four token kinds added up per run)
     a {"median", "min", "max"} dict, or None if no run has a value.
     `mcp_connected` is the range of MCP servers connected at start
-    ("4/13" or "4/13–10/13"), "" if no run recorded it.
+    ("4/13" or "4/13–9/13"), "" if no run recorded it.
     """
     out = []
     for key, members in _grouped(rows, KEY):
@@ -141,7 +141,7 @@ def _with_effort(model: str, effort: str) -> str:
 
 
 def _mcp_range(members: list[dict]) -> str:
-    """MCP servers connected at start over a group's runs: "4/13", "4/13–10/13", or ""."""
+    """MCP servers connected at start over a group's runs: "4/13", "4/13–9/13", or ""."""
     values = set()
     for r in members:
         connected, _, total = str(r.get("mcp_connected") or "").partition("/")
