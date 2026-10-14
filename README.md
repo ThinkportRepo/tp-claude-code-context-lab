@@ -22,8 +22,9 @@ consumes, so you can compare setups with measurements instead of guesses.
 - `git` and the GitHub CLI (`gh`).
 - Node.js with `npx`, if `lab/matrix.conf` contains a `dev-stack` test (the
   default file does). `setup`, `run` and `session` need it then.
-- Google Chrome, for the `playwright` plugin in the `dev-stack` profile.
-  `setup` warns if it is missing.
+- Google Chrome, for the `playwright` plugin in the `dev-stack` profile
+  (the plugin is expected to use the installed Chrome). `setup` warns if
+  it is missing.
 - A new, empty GitHub organization in which you are an admin. Create it in
   the browser; `gh` cannot create organizations.
 

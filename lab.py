@@ -8,7 +8,7 @@ First run, in this order:
   3. Set LAB_GH_ORG=<organization> in .env by hand (see .env.example).
   4. python3 lab.py tokens github          create a fine-grained GitHub token (1 day), store it
   5. python3 lab.py tokens github --check  create, push, publish and delete a test repo
-  6. python3 lab.py setup                  check access, install the browser, create sandbox dirs
+  6. python3 lab.py setup                  check GitHub access and create sandbox dirs (warns about Google Chrome for dev-stack)
   7. python3 lab.py run test1              run one test headless, record it in results.csv
   8. python3 lab.py report                 summarize results.csv
   9. python3 lab.py teardown --secrets     delete lab repos and sandbox, revoke the tokens
@@ -236,9 +236,9 @@ def run_setup(cfg: dict[str, str]) -> int:
         if any(t.profile == "dev-stack" for t in tests):
             if not preflight.chrome_installed(Path.home()):
                 print(
-                    "warning: Google Chrome is not installed. The playwright plugin in the dev-stack"
-                    " profile starts its MCP server with the installed Google Chrome, so dev-stack runs"
-                    " may fail to open a browser. Install Google Chrome to fix this.",
+                    "warning: Google Chrome is not installed. By default the playwright plugin in the"
+                    " dev-stack profile is expected to use the installed Google Chrome, so dev-stack"
+                    " runs may fail to open a browser. Install Google Chrome to fix this.",
                     file=sys.stderr,
                 )
         for test in tests:
@@ -330,7 +330,7 @@ def main() -> int:
         help="start without the prompt to inspect the profile; records nothing",
     )  # fmt: skip
 
-    sub.add_parser("setup", help="check GitHub access, install the browser, create sandbox dirs")
+    sub.add_parser("setup", help="check GitHub access and create sandbox dirs (warns about Google Chrome for dev-stack)")
     sub.add_parser("report", help="summarize results.csv")
     td = sub.add_parser("teardown", help="delete the lab's repos and sandbox")
     td.add_argument("--secrets", action="store_true", help="also revoke the GitHub and Claude tokens")
