@@ -13,7 +13,7 @@ Each entry is marked:
 The lab was built by AI coding agents under a coordinating agent, with a
 person deciding direction and running the steps that need a browser or the
 subscription (see [implementation-history.md](implementation-history.md)).
-The rulings R1–R36 and R38–R44 are numbered in the order they were made.
+The rulings R1–R36 and R38–R45 are numbered in the order they were made.
 R37 was a ruling on the review process and is not listed. Decisions the
 user made without a ruling number follow after them.
 
@@ -537,7 +537,7 @@ applies R42).
 
 - **Decided:** `@executeautomation/playwright-mcp-server` is removed from
   `dev-messy`, with its allow rule. The profile keeps ten user-scope and
-  three plugin MCP servers.
+  three plugin MCP servers (nine user-scope after R45).
 - **Why:** in stdio mode the server always writes
   `~/playwright-mcp-server.log` in the user's home directory and ignores
   `LOG_FILE_PATH`; the live run created that file. Moving it would need a
@@ -560,6 +560,22 @@ applies R42).
 - **Cost if wrong:** `dev-messy` numbers vary from run to run with startup
   timing and need repeats (`REPEAT`) to compare. `results.csv` files from
   before the column must be moved aside.
+
+### R45 — Drop the user-scope copy of microsoft-learn
+
+**Implementation decision** (2026-10-14, after the live `test7` and
+`test8` runs).
+
+- **Decided:** `dev-messy` no longer has a user-scope `microsoft-learn`
+  server or its allow rule. The `microsoft-docs` plugin's server and its
+  rule stay. The profile has nine user-scope and three plugin MCP
+  servers.
+- **Why:** both servers had the same URL, and Claude Code then drops the
+  plugin's server (observed with Claude Code 2.1.296, not documented): the
+  init events never listed `plugin:microsoft-docs:microsoft-learn`. The
+  user-scope copy added no overlap; it only replaced the plugin's server.
+- **Cost if wrong:** none for the measurement: the same server stays
+  loaded through the plugin.
 
 ## Further user decisions
 
@@ -727,10 +743,10 @@ applies R42).
 - **Decided:** a profile with ten skill plugins and at least ten MCP
   servers, with heavy overlap, all with a developer context. The user
   asked not to be consulted on the contents; the coordinator chose them
-  (see R38 and R41–R44).
+  (see R38 and R41–R45).
 - **Why:** real setups grow over time. The lab shows what such a setup
   adds to the context and whether the overlap changes the result.
-- **Cost if wrong:** two more tests per `run all`, each starting thirteen
+- **Cost if wrong:** two more tests per `run all`, each starting twelve
   MCP servers, and more of the usage limit spent.
 
 ### One test on Sonnet 5 at medium effort
