@@ -13,8 +13,8 @@ Each entry is marked:
 The lab was built by AI coding agents under a coordinating agent, with a
 person deciding direction and running the steps that need a browser or the
 subscription (see [implementation-history.md](implementation-history.md)).
-The rulings R1–R34 are numbered in the order they were made. Decisions the
-user made without a ruling number follow after them.
+The rulings (R1–R34, R38–R41) are numbered in the order they were made.
+Decisions the user made without a ruling number follow after them.
 
 ## Rulings
 
@@ -405,6 +405,73 @@ user made without a ruling number follow after them.
 - **Cost if wrong:** a link set by a slow API call at the very end of a
   turn is missed, which costs one follow-up.
 
+### R38 — The stress-test profile is called `dev-messy`
+
+**Implementation decision** (applies the user decision
+[Names announce their content](#names-announce-their-content)).
+
+- **Decided:** the profile with many overlapping skills and MCP servers is
+  named `dev-messy`.
+- **Why:** it is a developer setup like `dev-stack`, and the name says
+  what sets it apart: it has grown without cleanup.
+- **Cost if wrong:** a rename touches the profile directory,
+  `matrix.conf`, `MCP_PROFILES` in `lab.py` and the docs.
+
+### R39 — The Sonnet test uses the model ID `claude-sonnet-5`
+
+**Implementation decision.**
+
+- **Decided:** the user asked for a test on "Sonnet 5". `test9` passes the
+  model ID of Claude Sonnet 5, `claude-sonnet-5`, literally. It is not
+  `claude-sonnet-5-5`, the newer Sonnet 5.5.
+- **Why:** the request named a version, and the matrix pins exact model
+  IDs so that runs stay comparable when a newer model comes out.
+- **Cost if wrong:** if the user meant the current Sonnet, `test9`
+  measures the previous generation. The fix is one column in
+  `matrix.conf`.
+
+### R40 — Effort is an optional matrix column
+
+**Implementation decision.**
+
+- **Decided:** `matrix.conf` gets an optional fifth column, `effort`
+  (`low`, `medium`, `high`, `xhigh`, `max`). A model column of `-` means
+  the default model, so a test can set an effort alone. A test with an
+  effort passes `--effort` to every call that reaches the model (headless
+  turns, follow-ups, the interactive session), never to the usage-limit
+  probe. A test without one passes no `--effort`. `results.csv` gets an
+  `effort` column after `model`, and the report groups by it.
+- **Why:** the effort level changes how much a model thinks and therefore
+  its token use, so it is part of what a run measures and must not be
+  mixed in one median. Passing nothing when unset keeps the existing tests
+  as they were. The probe measures the account's limit, not the test.
+- **Cost if wrong:** `results.csv` files from before the change have other
+  columns and must be moved aside. `-` is one more rule to know when
+  editing the matrix.
+
+### R41 — Extra MCP servers are user-scope and pinned
+
+**Implementation decision.**
+
+- **Decided:** MCP servers that no plugin ships come from the profile's
+  `mcp.json` and are written as user-scope servers into the run's fresh
+  `.claude.json`. Each npm package is pinned to an exact version and
+  started with `npx -y`. Only servers without a login and without tools
+  beyond Node are used. Each server gets one server-level allow rule
+  (`mcp__<server>`).
+- **Why:** user scope is where a developer's own servers live
+  (`claude mcp add --scope user`), so the run sees what such a setup sees.
+  Without a pinned version, `npx` would fetch the latest release at every
+  session start, and runs on different days would not be comparable.
+  A server that needed a login did not start in a headless run (see
+  [Replace context7 with microsoft-docs](#replace-context7-with-microsoft-docs)).
+- **Cost if wrong:** pinned versions age and miss fixes until someone
+  updates them. The local servers run with the user's rights, and a
+  server-level allow rule allows all of a server's tools without a prompt.
+  `desktop-commander` can run shell commands, so `dev-messy` runs are not
+  bound by the shared `Bash` allow and deny lists. `npx` downloads each
+  package on first use, which counts toward the first run's duration.
+
 ## Further user decisions
 
 ### Haiku as the default model
@@ -539,16 +606,17 @@ user made without a ruling number follow after them.
 **User decision** (2026-10-14).
 
 - **Decided:** `lab.py setup` no longer runs `npx playwright install
-  chromium`. When the matrix contains a `dev-stack` test, it warns if
-  Google Chrome is not installed.
+  chromium`. When the matrix contains a `dev-stack` or `dev-messy` test,
+  it warns if Google Chrome is not installed.
 - **Why:** the lab never uses Playwright. Only the MCP server of the
-  `playwright` plugin does. It brings its own library, and by default
-  its MCP server is expected to use the installed Google Chrome
-  (assumption, not yet verified by a run that opens the browser). The
-  installed Chromium was therefore most likely never used, and the command
-  printed a warning because the lab is not a Node project.
-- **Cost if wrong:** if the MCP server's default is not Chrome, `dev-stack`
-  runs may fail to open a browser until a browser is installed.
+  `playwright` plugin does. It brings its own library and uses the
+  installed Google Chrome (verified 2026-10-14: during a probe run the
+  installed Chrome's browser binary was accessed, and Playwright's own
+  Chromium was not). The installed Chromium was therefore never used, and
+  the command printed a warning because the lab is not a Node project.
+- **Cost if wrong:** a future version of the MCP server with another
+  default browser would make these runs fail to open a browser until that
+  browser is installed.
 
 ### Warn only for memory files in parent directories
 
@@ -562,6 +630,31 @@ user made without a ruling number follow after them.
   warning fired for settings that have no effect on the runs.
 - **Cost if wrong:** a future Claude Code version that reads more from
   parent directories would go unwarned.
+
+### A stress-test profile with overlapping skills and MCP servers
+
+**User decision** (2026-10-14).
+
+- **Decided:** a profile with ten skill plugins and at least ten MCP
+  servers, with heavy overlap, all with a developer context. The user
+  asked not to be consulted on the contents; the coordinator chose them
+  (see R38 and R41).
+- **Why:** real setups grow over time. The lab shows what such a setup
+  adds to the context and whether the overlap changes the result.
+- **Cost if wrong:** two more tests per `run all`, each starting fifteen
+  MCP servers, and more of the usage limit spent.
+
+### One test on Sonnet 5 at medium effort
+
+**User decision** (2026-10-14).
+
+- **Decided:** one test runs on Sonnet 5 at medium effort; the default
+  model stays `claude-haiku-5-5` (see R39 and R40).
+- **Why:** to compare a larger model at a set effort with the cheap
+  default on the same task.
+- **Cost if wrong:** at API prices Sonnet 5 costs 20 times as much per
+  token as Haiku. How much more it counts against the usage limit is not
+  published; the lab records it.
 
 ## Open decisions
 

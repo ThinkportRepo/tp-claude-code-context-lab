@@ -12,3 +12,5 @@ one of the profiles the lab measures.
   measures, and in which the lab was built.
 - Plugins from the `claude-plugins-official` marketplace in the `dev-stack`
   profile: `frontend-design`, `playwright` and `microsoft-docs`.
+- The plugins and MCP servers of the `dev-messy` profile, listed in
+  `lab/profiles/dev-messy/`.
