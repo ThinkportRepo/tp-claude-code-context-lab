@@ -73,8 +73,10 @@ def prepare(command: str, args: argparse.Namespace, *, need_node: bool = False) 
         sandbox=SANDBOX,
         home=Path.home(),
     )
-    if command in ("run", "session"):
+    records_row = command == "run" or (command == "session" and not getattr(args, "no_prompt", False))
+    if records_row:
         # Before any tokens are spent: a finished run must not fail on its last step.
+        # `session --no-prompt` records no row, so an old results file is no problem there.
         try:
             results.check_header(results_file())
         except ValueError as exc:

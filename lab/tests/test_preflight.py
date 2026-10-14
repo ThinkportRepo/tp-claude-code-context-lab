@@ -210,20 +210,46 @@ class Prepare(unittest.TestCase):
         self.tmp = Path(tmp.name).resolve()
         self.env_file = self.tmp / ".env"  # never the developer's real .env
 
-    def prepare(self, command, errors, warnings, file_problems=(), need_node=False):
+    def prepare(self, command, errors, warnings, file_problems=(), need_node=False, args=None,
+                results_file=None):
         cli = self.load_lab_module()
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.object(cli, "ENV_FILE", self.env_file), \
+             mock.patch.object(cli, "results_file", return_value=results_file or self.tmp / "none.csv"), \
              mock.patch.object(preflight, "check", return_value=(errors, warnings)) as check, \
              mock.patch.object(env, "file_problems", return_value=list(file_problems)), \
              mock.patch.dict("os.environ", {"GH_TOKEN": "ghp_SECRETSECRET"}), \
              contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                cfg = cli.prepare(command, argparse.Namespace(), need_node=need_node)
+                cfg = cli.prepare(command, args or argparse.Namespace(), need_node=need_node)
                 code = None
             except SystemExit as e:
                 cfg, code = None, e.code
         return cfg, code, out.getvalue() + err.getvalue(), check
+
+    def old_results(self) -> Path:
+        """A results.csv written by an older lab version (other columns)."""
+        path = self.tmp / "results.csv"
+        path.write_text("timestamp,test_id\n2026-01-01,test1\n")
+        return path
+
+    def test_old_results_file_stops_run_and_session_that_record_a_row(self):
+        path = self.old_results()
+        for command, args in (
+            ("run", argparse.Namespace()),
+            ("session", argparse.Namespace(no_prompt=False)),
+        ):
+            _, code, output, _ = self.prepare(command, [], [], args=args, results_file=path)
+            self.assertEqual(code, 1, command)
+            self.assertIn("other columns", output, command)
+
+    def test_old_results_file_does_not_stop_session_no_prompt(self):
+        # No row is recorded, so the old file is not in the way.
+        _, code, output, _ = self.prepare(
+            "session", [], [], args=argparse.Namespace(no_prompt=True), results_file=self.old_results()
+        )
+        self.assertIsNone(code, output)
+        self.assertNotIn("other columns", output)
 
     def test_prepare_reads_the_env_file_it_is_given(self):
         self.env_file.write_text("LAB_GH_ORG=from-temp-file\n")
