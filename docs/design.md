@@ -110,7 +110,7 @@ with Claude Code, so no extra marketplace is needed.
 | `clean` | none |
 | `superpowers` | `superpowers` |
 | `dev-stack` | `superpowers`, `frontend-design`, `microsoft-docs`, `playwright` |
-| `dev-messy` | ten skill plugins and three MCP plugins (three plugin servers), plus ten user-scope MCP servers (see [dev-messy](#dev-messy)) |
+| `dev-messy` | ten skill plugins and three MCP plugins (three plugin servers), plus nine user-scope MCP servers (see [dev-messy](#dev-messy)) |
 
 `dev-stack` stands for a typical developer setup, built from the most
 installed plugins in the official marketplace. Install counts and token
@@ -141,7 +141,7 @@ Rejected for `dev-stack`:
 
 Every profile's `settings.json` holds the plugin list (`enabledPlugins`) and
 the shared permission lists (see [Permissions](#permissions)). `dev-stack`
-also allows its two MCP servers, `dev-messy` its thirteen.
+also allows its two MCP servers, `dev-messy` its twelve.
 
 A profile can also have an `mcp.json` with MCP servers that no plugin
 ships, in the format `{"mcpServers": {"<name>": {...}}}`. The lab writes
@@ -185,16 +185,27 @@ to an exact version that is published and not deprecated on npm (checked
 | `playwright` | `@playwright/mcp@0.0.83` |
 | `git` | `@cyanheads/git-mcp-server@2.15.3` |
 | `deepwiki` | `https://mcp.deepwiki.com/mcp` (HTTP, no auth) |
-| `microsoft-learn` | `https://learn.microsoft.com/api/mcp` (HTTP, the same server as the `microsoft-docs` plugin) |
 
 The overlap is deliberate: four browser servers (`playwright` and
-`chrome-devtools`, each as a plugin and as a user-scope server), four
-docs and lookup servers (`context7`, `deepwiki`, two `microsoft-learn`),
-a `git` server next to the `git` and `gh` CLIs, and `filesystem` next to
-the built-in file tools. `chrome-devtools-mcp` was rejected for
-`dev-stack` because of exactly this overlap. `context7` was rejected there because the remote
-server needs an OAuth login; `dev-messy` runs the npm package locally,
-which needs none.
+`chrome-devtools`, each as a plugin and as a user-scope server), three
+docs and lookup servers (`context7`, `deepwiki` and the `microsoft-docs`
+plugin's `microsoft-learn`), a `git` server next to the `git` and `gh`
+CLIs, and `filesystem` next to the built-in file tools.
+`chrome-devtools-mcp` was rejected for `dev-stack` because of exactly
+this overlap. `context7` was rejected there because the remote server
+needs an OAuth login; `dev-messy` runs the npm package locally, which
+needs none.
+
+An overlap only counts if the configs differ. Claude Code drops a
+plugin's MCP server when a user-scope server has the same URL (observed
+in the live `test7` and `test8` runs, 2026-10-14, Claude Code 2.1.296;
+not documented): a user-scope copy of the `microsoft-docs` plugin's
+`microsoft-learn` replaced the plugin's server instead of adding a second
+one, so it was removed (R45). The two browser overlaps survive because
+their configs differ: plugin `playwright` runs `@playwright/mcp@latest`
+next to the user-scope `@playwright/mcp@0.0.83`, and plugin
+`chrome-devtools` runs `chrome-devtools-mcp@1.9.0` next to the
+user-scope `chrome-devtools-mcp@1.10.1`.
 
 No server may keep state outside the run or send telemetry (R42; checked
 in the published npm packages, 2026-10-14):
