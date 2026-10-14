@@ -13,7 +13,7 @@ Each entry is marked:
 The lab was built by AI coding agents under a coordinating agent, with a
 person deciding direction and running the steps that need a browser or the
 subscription (see [implementation-history.md](implementation-history.md)).
-The rulings R1–R36 and R38–R42 are numbered in the order they were made.
+The rulings R1–R36 and R38–R44 are numbered in the order they were made.
 R37 was a ruling on the review process and is not listed. Decisions the
 user made without a ruling number follow after them.
 
@@ -530,6 +530,37 @@ packages).
   happens when someone updates them. `dev-messy` has one overlapping
   server fewer than planned.
 
+### R43 — Drop playwright-automation from dev-messy
+
+**Implementation decision** (2026-10-14, after the live `test7` run;
+applies R42).
+
+- **Decided:** `@executeautomation/playwright-mcp-server` is removed from
+  `dev-messy`, with its allow rule. The profile keeps ten user-scope and
+  three plugin MCP servers.
+- **Why:** in stdio mode the server always writes
+  `~/playwright-mcp-server.log` in the user's home directory and ignores
+  `LOG_FILE_PATH`; the live run created that file. Moving it would need a
+  different `HOME` for the server, which also changes where it looks for
+  browsers.
+- **Cost if wrong:** one browser server less overlap in the stress test.
+
+### R44 — Record MCP startup instead of waiting for it
+
+**Implementation decision** (2026-10-14, after the live `test7` run).
+
+- **Decided:** the lab does not make Claude Code wait for MCP servers
+  before the first request. It records, per headless run, how many were
+  connected at the start (`mcp_connected`, from the first turn's `init`
+  event), and the report shows it per group.
+- **Why:** the lab measures what Claude Code does with a setup, and not
+  waiting is what it does: in the live run 4 of 13 servers were connected
+  at turn 1. A wait would need undocumented settings, which the lab does
+  not use. The new column makes the effect visible instead of hiding it.
+- **Cost if wrong:** `dev-messy` numbers vary from run to run with startup
+  timing and need repeats (`REPEAT`) to compare. `results.csv` files from
+  before the column must be moved aside.
+
 ## Further user decisions
 
 ### Haiku as the default model
@@ -696,10 +727,10 @@ packages).
 - **Decided:** a profile with ten skill plugins and at least ten MCP
   servers, with heavy overlap, all with a developer context. The user
   asked not to be consulted on the contents; the coordinator chose them
-  (see R38, R41 and R42).
+  (see R38 and R41–R44).
 - **Why:** real setups grow over time. The lab shows what such a setup
   adds to the context and whether the overlap changes the result.
-- **Cost if wrong:** two more tests per `run all`, each starting fourteen
+- **Cost if wrong:** two more tests per `run all`, each starting thirteen
   MCP servers, and more of the usage limit spent.
 
 ### One test on Sonnet 5 at medium effort
