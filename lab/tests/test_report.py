@@ -7,12 +7,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from labkit import report, results  # noqa: E402
 
+# The widest line the report may print: the Runs table reaches ~127 at realistic values (R52).
+TERMINAL_WIDTH = 130
+
 
 def row(**kw):
     """A run row with the grouping keys filled in; kw overrides."""
     base = {
         "mode": "headless", "model": "m1", "profile": "clean",
-        "prompt": "simple", "status": "ok",
+        "prompt": "prompt-simple.md", "status": "ok",
     }  # fmt: skip
     base.update(kw)
     return base
@@ -34,6 +37,12 @@ class TestResultsFile(unittest.TestCase):
     def test_goal_ok_replaces_pages_ok_in_place(self):
         self.assertEqual(results.FIELDS[results.FIELDS.index("status") + 1], "goal_ok")
         self.assertNotIn("pages_ok", results.FIELDS)
+
+    def test_effort_follows_model(self):
+        self.assertEqual(results.FIELDS[results.FIELDS.index("model") + 1], "effort")
+
+    def test_mcp_connected_is_the_last_column(self):
+        self.assertEqual(results.FIELDS[-2:], ("plugin_versions", "mcp_connected"))
 
     def test_append_rejects_unknown_field(self):
         with self.assertRaises(ValueError):
@@ -128,7 +137,7 @@ class TestSummarize(unittest.TestCase):
         groups = report.summarize(rows)
         self.assertEqual(len(groups), 3)
         self.assertEqual(group(rows, mode="interactive")["ctx_start"]["median"], 31115)
-        self.assertEqual(group(rows, mode="headless", prompt="simple")["ctx_start"]["median"], 18758)
+        self.assertEqual(group(rows, mode="headless", prompt="prompt-simple.md")["ctx_start"]["median"], 18758)
 
     def test_groups_sorted_by_mode_model_profile_prompt(self):
         rows = [
@@ -137,7 +146,52 @@ class TestSummarize(unittest.TestCase):
         ]  # fmt: skip
         keys = [(g["mode"], g["model"], g["profile"], g["prompt"]) for g in report.summarize(rows)]
         self.assertEqual(keys, sorted(keys))
-        self.assertEqual(keys[0], ("headless", "m1", "clean", "simple"))
+        self.assertEqual(keys[0], ("headless", "m1", "clean", "prompt-simple.md"))
+
+
+class TestEffort(unittest.TestCase):
+    def test_groups_keep_efforts_apart(self):
+        rows = [row(ctx_start=1), row(effort="medium", ctx_start=2), row(effort="high", ctx_start=3)]
+        self.assertEqual(len(report.summarize(rows)), 3)
+        self.assertEqual(group(rows, effort="medium")["ctx_start"]["median"], 2)
+        self.assertEqual(group(rows, effort="")["ctx_start"]["median"], 1)
+
+    def test_section_heading_shows_the_effort(self):
+        rows = [row(model="claude-sonnet-5", effort="medium"), row(effort="")]
+        lines = report.render(rows).splitlines()
+        self.assertIn("[headless / claude-sonnet-5 / medium]", lines)
+        self.assertIn("[headless / m1]", lines)  # no effort: as before
+
+    def test_starting_points_keep_efforts_apart(self):
+        rows = [row(ctx_start=10), row(effort="max", ctx_start=20)]
+        points = {(p["profile"], p["model"]): p for p in report.starting_points(rows)}
+        self.assertEqual(points[("clean", "m1")]["headless_ctx_start"], 10)
+        self.assertEqual(points[("clean", "m1 / max")]["headless_ctx_start"], 20)
+
+
+class TestMcpConnectedLine(unittest.TestCase):
+    @staticmethod
+    def summary(rows):
+        """Lines of the first table: up to the starting-point title."""
+        lines = report.render(rows).splitlines()
+        return lines[: next(i for i, l in enumerate(lines) if l.startswith("Starting point"))]
+
+    def test_line_per_group_with_a_value(self):
+        rows = [row(profile="dev-messy", mcp_connected="4/13"), row(mcp_connected="")]
+        lines = self.summary(rows)
+        self.assertEqual([l.strip() for l in lines if "MCP" in l], ["MCP servers connected at start: 4/13"])
+        at = next(i for i, l in enumerate(lines) if l.startswith("dev-messy"))
+        self.assertIn("MCP servers connected at start: 4/13", lines[at + 1])
+
+    def test_range_over_repeats(self):
+        rows = [row(mcp_connected=v) for v in ("9/13", "4/13", "", "9/13")]
+        (line,) = [l for l in self.summary(rows) if "MCP" in l]
+        self.assertEqual(line.strip(), "MCP servers connected at start: 4/13–9/13")
+
+    def test_no_line_without_values(self):
+        for rows in ([row()], [row(mcp_connected="")], [row(mcp_connected=None)]):
+            with self.subTest(rows=rows):
+                self.assertNotIn("MCP", report.render(rows))
 
 
 class TestStartingPoints(unittest.TestCase):
@@ -209,14 +263,14 @@ class TestRender(unittest.TestCase):
 
     def assert_fits(self, cache_reads):
         rows = [
-            row(mode=m, profile="superpowers", prompt="well-defined",
+            row(mode=m, profile="superpowers", prompt="prompt-well-defined.md",
                 model="claude-sonnet-5-5", ctx_start=v, ctx_growth=v // 10, tokens_out=v // 5,
                 cache_read=c, limit_5h_start_pct=10, limit_5h_end_pct=10 + i)
             for m in ("headless", "interactive")
             for i, (v, c) in enumerate(zip((17900, 18800, 123456), cache_reads))
         ]  # fmt: skip
         for line in report.render(rows).splitlines():
-            self.assertLessEqual(len(line), 120, line)
+            self.assertLessEqual(len(line), TERMINAL_WIDTH, line)
 
     def test_render_fits_live_terminal(self):
         self.assert_fits((350_000, 420_000, 610_000))
@@ -262,7 +316,7 @@ class TestTokenTable(unittest.TestCase):
         self.assertEqual(positions, sorted(positions), header)
         self.assertIn("[headless / m1]", lines)
         cells = next(l for l in lines if l.startswith("clean")).split()
-        self.assertEqual(cells, ["clean", "simple", "1", "14", "31.2k", "49.1k", "880", "81.2k", "$0.009"])
+        self.assertEqual(cells, ["clean", "prompt-simple.md", "1", "14", "31.2k", "49.1k", "880", "81.2k", "$0.009"])
 
     def test_api_equiv_keeps_three_decimals(self):
         cells = next(l for l in self.table([row(**USAGE, api_equiv_usd=0.0004)]) if l.startswith("clean"))
@@ -289,7 +343,7 @@ class TestTokenTable(unittest.TestCase):
     def test_fits_live_terminal_with_realistic_magnitudes(self):
         # From dev runs: Haiku sessions with 350k–730k cache reads; plus a 1.2M one.
         rows = [
-            row(mode=m, profile="superpowers", prompt="well-defined", model="claude-sonnet-5-5",
+            row(mode=m, profile="superpowers", prompt="prompt-well-defined.md", model="claude-sonnet-5-5",
                 tokens_in=i, cache_write=w, cache_read=r, tokens_out=o, api_equiv_usd=c)
             for m in ("headless", "interactive")
             for i, w, r, o, c in ((28, 12604, 401_405, 4971, 0.009), (40, 16493, 725_552, 7126, 0.0117),
@@ -298,7 +352,7 @@ class TestTokenTable(unittest.TestCase):
         lines = self.table(rows)
         self.assertIn("1.3M", "\n".join(lines))  # total up to ~1.3M
         for line in report.render(rows).splitlines():
-            self.assertLessEqual(len(line), 120, line)
+            self.assertLessEqual(len(line), TERMINAL_WIDTH, line)
 
 
 if __name__ == "__main__":

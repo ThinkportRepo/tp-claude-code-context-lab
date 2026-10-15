@@ -134,9 +134,9 @@ class FakeClaude(unittest.TestCase):
         )
         prompts = self.lab_root / "lab" / "prompts"
         prompts.mkdir()
-        (prompts / "simple.txt").write_text(PROMPT)
+        (self.lab_root / "prompt-simple.md").write_text(PROMPT)
         (prompts / "followups.txt").write_text("# comment\n" + "\n".join(FOLLOWUPS) + "\n")
-        self.test = config.Test("test1", "clean", "simple", MODEL)
+        self.test = config.Test("test1", "clean", "prompt-simple.md", MODEL)
         self.log = self.tmp / "claude.log"
         environ = {k: v for k, v in os.environ.items() if not k.startswith("FAKE_CLAUDE_")}
         environ.update(
@@ -222,7 +222,45 @@ class Probe(FakeClaude):
         self.assertEqual(err.getvalue(), "")
 
 
+class HeadlessArgv(unittest.TestCase):
+    def test_effort_only_when_set(self):
+        self.assertNotIn("--effort", runner.headless_argv("hi", MODEL))
+        self.assertNotIn("--effort", runner.headless_argv("hi", MODEL, "s1", effort=None))
+        argv = runner.headless_argv("hi", MODEL, "s1", effort="medium")
+        self.assertEqual(argv[argv.index("--effort") + 1], "medium")
+        self.assertEqual(argv.count("--effort"), 1)
+
+
 class HeadlessRun(FakeClaude):
+    def test_mcp_connected_from_the_first_turn(self):
+        fixture = self.tmp / "init-fixture"
+        shutil.copytree(FIXTURES / "headless_subagent", fixture)
+        init = {"type": "system", "subtype": "init", "session_id": SESSION, "mcp_servers": [
+            {"name": "a", "status": "connected"}, {"name": "b", "status": "pending"},
+            {"name": "c", "status": "pending"},
+        ]}  # fmt: skip
+        stream = fixture / "stream.jsonl"
+        stream.write_text(json.dumps(init) + "\n" + stream.read_text())
+        os.environ["FAKE_CLAUDE_FIXTURE"] = str(fixture)
+        row = self.run_headless(FakeGitHub(goal_ok=[True]))
+        self.assertEqual(row["mcp_connected"], "1/3")
+        (csv_row,) = self.csv_rows()
+        self.assertEqual(csv_row["mcp_connected"], "1/3")
+
+    def test_effort_reaches_every_turn_but_not_the_probe(self):
+        limits.probe(self.lab_root, CFG)
+        test = config.Test("test1", "clean", "prompt-simple.md", MODEL, "medium")
+        row = self.run_headless(FakeGitHub(goal_ok=[False, False]), test=test)
+        probe, *turns = self.p_calls()
+        self.assertNotIn("--effort", probe["argv"])
+        self.assertEqual(len(turns), 1 + len(FOLLOWUPS))
+        for call in turns:
+            argv = call["argv"]
+            self.assertEqual(argv[argv.index("--effort") + 1], "medium", argv)
+        self.assertEqual(row["effort"], "medium")
+        (csv_row,) = self.csv_rows()
+        self.assertEqual(csv_row["effort"], "medium")
+
     def test_ok_run_writes_row(self):
         row = self.run_headless(FakeGitHub(goal_ok=[True]))
         self.assertEqual(row["status"], "ok")
@@ -232,7 +270,9 @@ class HeadlessRun(FakeClaude):
         self.assertEqual(row["limit_5h_end_pct"], 12)
         self.assertEqual(row["mode"], "headless")
         self.assertEqual(row["model"], MODEL)
-        self.assertEqual((row["test"], row["profile"], row["prompt"]), ("test1", "clean", "simple"))
+        self.assertIsNone(row["effort"])
+        self.assertEqual(row["mcp_connected"], "")  # the fixture stream has no init event
+        self.assertEqual((row["test"], row["profile"], row["prompt"]), ("test1", "clean", "prompt-simple.md"))
         self.assertEqual(set(row), set(results.FIELDS))
         (csv_row,) = self.csv_rows()
         self.assertEqual(csv_row["status"], "ok")
@@ -368,7 +408,7 @@ class HeadlessRun(FakeClaude):
         self.assertNotIn("claude exited", self.out.getvalue() + self.err.getvalue())
 
     def test_plugins_installed_before_first_turn(self):
-        test = config.Test("test3", "superpowers", "simple", MODEL)
+        test = config.Test("test3", "superpowers", "prompt-simple.md", MODEL)
         row = self.run_headless(FakeGitHub(goal_ok=[True]), test)
         marketplace, install, turn = self.calls()
         self.assertEqual(marketplace["argv"][:3], ["plugin", "marketplace", "add"])
@@ -388,7 +428,7 @@ class HeadlessRun(FakeClaude):
 
     def test_install_failure_recorded(self):
         os.environ["FAKE_CLAUDE_PLUGIN_FAIL"] = "1"
-        test = config.Test("test3", "superpowers", "simple", MODEL)
+        test = config.Test("test3", "superpowers", "prompt-simple.md", MODEL)
         with self.assertRaises(RuntimeError):
             self.run_headless(FakeGitHub(goal_ok=[True]), test)
         (csv_row,) = self.csv_rows()
@@ -397,7 +437,7 @@ class HeadlessRun(FakeClaude):
 
     def test_install_time_not_in_run_budget(self):
         os.environ["FAKE_CLAUDE_PLUGIN_SLEEP"] = "1.5"
-        test = config.Test("test3", "superpowers", "simple", MODEL)
+        test = config.Test("test3", "superpowers", "prompt-simple.md", MODEL)
         row = self.run_headless(FakeGitHub(goal_ok=[True]), test, timeout_s=1)
         self.assertEqual(row["status"], "ok")
         self.assertLessEqual(row["duration_s"], 1)
@@ -498,6 +538,7 @@ class HeadlessRun(FakeClaude):
             self.assertEqual(argv[argv.index("--permission-mode") + 1], "default")
             self.assertEqual(argv[argv.index("--output-format") + 1], "stream-json")
             self.assertIn("--verbose", argv)
+            self.assertNotIn("--effort", argv)  # no effort in the matrix: none passed
             self.assertNotIn("--bare", argv)
             self.assertNotIn("bypassPermissions", argv)
             self.assertTrue(call["stdin_devnull"], argv)
@@ -527,6 +568,7 @@ class Interactive(FakeClaude):
         self.assertEqual(row["limit_5h_end_pct"], 13)
         self.assertEqual(row["limit_5h_start_pct"], 12)
         self.assertEqual(row["mode"], "interactive")
+        self.assertEqual(row["mcp_connected"], "")  # no stream, so no init event
         self.assertEqual(row["status"], "ok")
         self.assertIs(row["goal_ok"], True)
         self.assertEqual(set(row), set(results.FIELDS))
@@ -553,6 +595,26 @@ class Interactive(FakeClaude):
         self.assertEqual(session["config_dir"], str(self.lab_root / "sandbox" / "test1" / "config"))
         self.assertTrue(session["oauth_env"])
 
+    def test_leftovers_of_an_earlier_run_are_removed_before_both_modes(self):
+        work = self.lab_root / "sandbox" / "test1"
+        for run in (lambda: self.run_interactive(FakeGitHub(goal_ok=[True])),
+                    lambda: FakeClaude.run_headless(self, FakeGitHub(goal_ok=[True]))):
+            work.mkdir(parents=True, exist_ok=True)
+            (work / "poll-pages.sh").write_text("from an earlier run")
+            (work / ".playwright-mcp").mkdir(exist_ok=True)
+            run()
+            self.assertFalse((work / "poll-pages.sh").exists())
+            self.assertFalse((work / ".playwright-mcp").exists())
+
+    def test_session_argv_carries_the_effort(self):
+        test = config.Test("test1", "clean", "prompt-simple.md", MODEL, "high")
+        row = self.run_interactive(FakeGitHub(goal_ok=[True]), test=test)
+        (session,) = self.sessions()
+        self.assertEqual(
+            session["argv"], [PROMPT, "--model", MODEL, "--effort", "high", "--permission-mode", "default"]
+        )
+        self.assertEqual(row["effort"], "high")
+
     def test_goal_not_met_is_failed(self):
         row = self.run_interactive(FakeGitHub(goal_ok=[False]))
         self.assertEqual(row["status"], "failed")
@@ -568,7 +630,7 @@ class Interactive(FakeClaude):
         self.assertIn(str(Path("sandbox") / "test1" / "config"), self.out.getvalue())
 
     def test_interactive_installs_profile_plugins(self):
-        test = config.Test("test3", "superpowers", "simple", MODEL)
+        test = config.Test("test3", "superpowers", "prompt-simple.md", MODEL)
         row = self.run_interactive(FakeGitHub(goal_ok=[True]), test)
         argvs = [c["argv"] for c in self.calls()]
         self.assertEqual(argvs[0][:3], ["plugin", "marketplace", "add"])

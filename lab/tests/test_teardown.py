@@ -544,32 +544,35 @@ class Cli(unittest.TestCase):
 
     # setup
 
-    def setup_cmd(self, *, org_ok=True, npx_rc=0, probe=None, matrix=None):
+    def setup_cmd(self, *, org_ok=True, chrome=True, probe=None, matrix=None):
         calls = []
 
         def fake_run(argv, **kwargs):
             calls.append(argv)
-            return subprocess.CompletedProcess(argv, npx_rc)
+            return subprocess.CompletedProcess(argv, 0)
 
         gh = mock.MagicMock()
         gh.org_ok.return_value = org_ok
         with mock.patch.object(self.cli.github, "GitHub", return_value=gh), \
              mock.patch.object(self.cli.subprocess, "run", side_effect=fake_run), \
+             mock.patch.object(self.cli.preflight, "chrome_installed", return_value=chrome) as chrome_mock, \
              mock.patch.object(self.cli.limits, "probe", return_value=probe) as probe_mock:
             if matrix is not None:
-                matrix_file = self.lab_root / "matrix.conf"
+                matrix_file = self.lab_root / "lab" / "matrix.conf"
+                matrix_file.parent.mkdir()
                 matrix_file.write_text(matrix)
                 self.cli.MATRIX_FILE = matrix_file
-                profiles = self.lab_root / "profiles"
-                profiles.symlink_to(REPO / "lab" / "profiles")
+                (self.lab_root / "lab" / "profiles").symlink_to(REPO / "lab" / "profiles")
+                for name in ("prompt-simple.md", "prompt-well-defined.md"):
+                    (self.lab_root / name).write_text((REPO / name).read_text())
             result = self.call(self.cli.run_setup, self.cfg)
-        return result, calls, probe_mock
+        return result, calls, probe_mock, chrome_mock
 
-    def test_setup_creates_dirs_installs_chromium_and_prints_matrix(self):
-        (code, out, _), calls, probe = self.setup_cmd(probe={"five_hour_pct": 12, "seven_day_pct": 5})
+    def test_setup_creates_dirs_and_prints_matrix(self):
+        (code, out, err), calls, probe, _ = self.setup_cmd(probe={"five_hour_pct": 12, "seven_day_pct": 5})
         self.assertEqual(code, 0)
-        self.assertEqual(calls, [["npx", "-y", f"playwright@{self.cli.PLAYWRIGHT_VERSION}", "install", "chromium"]])
-        self.assertRegex(self.cli.PLAYWRIGHT_VERSION, r"^1\.\d+\.\d+$")  # pinned, not "latest"
+        self.assertEqual(calls, [])  # nothing is installed or run
+        self.assertEqual(err, "")
         tests = config.load_matrix(REPO / "lab" / "matrix.conf", {})
         for test in tests:
             self.assertTrue((self.lab_root / "sandbox" / test.id).is_dir())
@@ -578,28 +581,65 @@ class Cli(unittest.TestCase):
         self.assertIn("5-hour limit: 88 % left (7-day: 95 % left)", out)
         probe.assert_called_once()
 
-    def test_setup_skips_chromium_without_dev_stack(self):
-        (code, _, _), calls, _ = self.setup_cmd(matrix="test1 clean simple\n")
+    def test_setup_warns_but_succeeds_without_chrome_for_dev_stack(self):
+        (code, out, err), calls, probe, chrome = self.setup_cmd(chrome=False)
         self.assertEqual(code, 0)
         self.assertEqual(calls, [])
+        chrome.assert_called_once()
+        self.assertIn("warning:", err)
+        self.assertIn("Google Chrome", err)
+        self.assertIn("playwright", err)
+        self.assertNotIn("Google Chrome", out)
+        probe.assert_called_once()  # setup carries on
+
+    def test_setup_is_silent_when_chrome_is_installed(self):
+        (code, _, err), _, _, chrome = self.setup_cmd(chrome=True)
+        self.assertEqual(code, 0)
+        chrome.assert_called_once()
+        self.assertEqual(err, "")
+
+    def test_setup_does_not_check_chrome_without_dev_stack(self):
+        (code, _, err), calls, _, chrome = self.setup_cmd(chrome=False, matrix="test1 clean\n")
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, [])
+        chrome.assert_not_called()
+        self.assertEqual(err, "")
+
+    def test_setup_warns_without_chrome_for_dev_messy(self):
+        (code, _, err), calls, _, chrome = self.setup_cmd(chrome=False, matrix="test1 dev-messy\n")
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, [])
+        chrome.assert_called_once()
+        self.assertIn("Google Chrome", err)
+        self.assertIn("dev-messy", err)
+        self.assertNotIn("dev-stack", err)  # names the profiles in the matrix only
+
+    def test_chrome_warning_states_the_verified_default(self):
+        (_, _, err), _, _, _ = self.setup_cmd(chrome=False)
+        self.assertIn("uses the installed Google Chrome (verified 2026-10-14)", err)
+        self.assertNotIn("expected to", err)
+
+    def test_setup_prints_the_effort_of_a_test(self):
+        matrix = "test1 clean prompt-well-defined.md claude-sonnet-5 medium\ntest2 clean\n"
+        (code, out, _), _, _, _ = self.setup_cmd(matrix=matrix)
+        self.assertEqual(code, 0)
+        line1, line2 = (next(l for l in out.splitlines() if l.split()[:1] == [t]) for t in ("test1", "test2"))
+        self.assertEqual(line1.split()[2:], ["prompt-well-defined.md", "claude-sonnet-5", "medium"])
+        self.assertEqual(line2.split()[2:], ["prompt-simple.md", config.DEFAULT_MODEL])
+        # The model column lines up although the prompt file names differ in length.
+        self.assertEqual(line1.index("claude-sonnet-5"), line2.index(config.DEFAULT_MODEL))
 
     def test_setup_prints_the_limit_as_unknown_when_the_probe_fails(self):
-        (_, out, _), _, _ = self.setup_cmd(probe=None)
+        (_, out, _), _, _, _ = self.setup_cmd(probe=None)
         self.assertIn("5-hour limit: unknown", out)
 
     def test_setup_stops_when_the_org_is_unreachable(self):
-        (code, _, err), calls, probe = self.setup_cmd(org_ok=False)
+        (code, _, err), calls, probe, _ = self.setup_cmd(org_ok=False)
         self.assertEqual(code, 1)
         self.assertIn("lab-org", err)
         self.assertEqual(calls, [])
         probe.assert_not_called()
         self.assertFalse((self.lab_root / "sandbox").exists())
-
-    def test_setup_stops_when_the_browser_install_fails(self):
-        (code, _, err), _, probe = self.setup_cmd(npx_rc=1)
-        self.assertEqual(code, 1)
-        self.assertIn("playwright", err)
-        probe.assert_not_called()
 
     # teardown
 

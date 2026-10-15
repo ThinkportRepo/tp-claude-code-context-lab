@@ -3,9 +3,9 @@
 Rows come from `results.read` (strings, empty cell = missing) or straight
 from a runner (numbers, None). Everything here treats both alike.
 
-The output is shown live, so each table stays within a ~120-column
-terminal: the first and third tables repeat mode and model as section
-headings instead of columns; the first shows only the most telling
+The output is shown live, so each table stays within a ~130-column
+terminal: the first and third tables repeat mode, model and effort as
+section headings instead of columns; the first shows only the most telling
 metrics, and the third puts min–max on a line of its own.
 """
 
@@ -13,10 +13,10 @@ import statistics
 
 from . import results
 
-KEY = ("mode", "model", "profile", "prompt")
+KEY = ("mode", "model", "effort", "profile", "prompt")
 NON_NUMERIC = {
-    "timestamp", "test", "mode", "model", "profile", "prompt", "status",
-    "goal_ok", "plugin_versions",
+    "timestamp", "test", "mode", "model", "effort", "profile", "prompt", "status",
+    "goal_ok", "plugin_versions", "mcp_connected",
 }  # fmt: skip
 NUMERIC = tuple(f for f in results.FIELDS if f not in NON_NUMERIC)
 # Columns of the summary table, in order, after profile/prompt/n/ok/goal.
@@ -83,12 +83,16 @@ def _grouped(rows: list[dict], keys: tuple) -> list[tuple[tuple, list[dict]]]:
 
 
 def summarize(rows: list[dict]) -> list[dict]:
-    """One dict per (mode, model, profile, prompt), sorted by that key.
+    """One dict per (mode, model, effort, profile, prompt), sorted by that key.
+
+    A row without an effort has the effort "" here.
 
     Besides the key: `n` runs, `ok` (status ok), `goal_ok` (goal_ok
     true), and for every numeric field plus `limit_used` (5-hour limit end
     minus start) and `tokens_total` (the four token kinds added up per run)
     a {"median", "min", "max"} dict, or None if no run has a value.
+    `mcp_connected` is the range of MCP servers connected at start
+    ("4/13" or "4/13–9/13"), "" if no run recorded it.
     """
     out = []
     for key, members in _grouped(rows, KEY):
@@ -100,6 +104,7 @@ def summarize(rows: list[dict]) -> list[dict]:
             g[field] = _stats([_num(r.get(field)) for r in members])
         g["limit_used"] = _stats([_limit_used(r) for r in members])
         g["tokens_total"] = _stats([_tokens_total(r) for r in members])
+        g["mcp_connected"] = _mcp_range(members)
         out.append(g)
     return out
 
@@ -110,15 +115,17 @@ def _median_of(rows: list[dict], field: str):
 
 
 def starting_points(rows: list[dict]) -> list[dict]:
-    """Per (profile, model): where each kind of context starts and grows.
+    """Per (profile, model, effort): where each kind of context starts and grows.
+
+    `model` is "<model> / <effort>" for a test with an effort, else the model.
 
     Medians of ctx_start/ctx_growth for interactive and for headless runs,
     and of sub_ctx_start_max/sub_ctx_growth_max for subagents (taken from
     every run of the pair, since subagents run inside either mode).
     """
     out = []
-    for (profile, model), members in _grouped(rows, ("profile", "model")):
-        point = {"profile": profile, "model": model}
+    for (profile, model, effort), members in _grouped(rows, ("profile", "model", "effort")):
+        point = {"profile": profile, "model": _with_effort(model, effort)}
         for mode in ("interactive", "headless"):
             of_mode = [r for r in members if str(r.get("mode")) == mode]
             point[f"{mode}_ctx_start"] = _median_of(of_mode, "ctx_start")
@@ -127,6 +134,29 @@ def starting_points(rows: list[dict]) -> list[dict]:
         point["sub_ctx_growth_max"] = _median_of(members, "sub_ctx_growth_max")
         out.append(point)
     return out
+
+
+def _with_effort(model: str, effort: str) -> str:
+    return f"{model} / {effort}" if effort else model
+
+
+def _mcp_range(members: list[dict]) -> str:
+    """MCP servers connected at start over a group's runs: "4/13", "4/13–9/13", or ""."""
+    values = set()
+    for r in members:
+        connected, _, total = str(r.get("mcp_connected") or "").partition("/")
+        if connected.isdigit() and total.isdigit() and int(total) > 0:
+            values.add((int(connected) / int(total), int(connected), int(total)))
+    if not values:
+        return ""
+    low, high = min(values), max(values)
+    text = f"{low[1]}/{low[2]}"
+    return text if low == high else f"{text}–{high[1]}/{high[2]}"
+
+
+def _section(g: dict) -> str:
+    """Section heading of a summary group: mode / model, plus / effort if set."""
+    return f"{g['mode']} / {_with_effort(g['model'], g['effort'])}"
 
 
 def _fmt(value) -> str:
@@ -168,14 +198,17 @@ def _table(header: list[str], rows: list[list[str]], left: int, sep: str = "  ")
     return lines
 
 
-def _sectioned(header: list[str], body: list[tuple[str, list[str]]], left: int) -> list[str]:
+def _sectioned(header: list[str], body: list[tuple[str, list[str] | str]], left: int) -> list[str]:
     """A table with a `[section]` line before each new section of `body`."""
     # One column grid for the whole table so sections line up.
-    # Single-space gaps: the range cells are wide and the table must fit ~120 columns.
-    table = _table(header, [cells for _, cells in body], left=left, sep=" ")
+    # Single-space gaps: the range cells are wide and the table must fit ~130 columns.
+    table = _table(header, [cells for _, cells in body if not isinstance(cells, str)], left=left, sep=" ")
     lines = [table[0], "-" * len(table[0])]
     previous = None
-    for (section, _), line in zip(body, table[1:]):
+    rows = iter(table[1:])
+    for section, cells in body:
+        # A string instead of cells is a note line under the previous row, outside the grid.
+        line = f"  {cells}" if isinstance(cells, str) else next(rows)
         if section != previous:
             if previous is not None:
                 lines.append("")
@@ -188,22 +221,24 @@ def _sectioned(header: list[str], body: list[tuple[str, list[str]]], left: int) 
 def _summary_lines(rows: list[dict]) -> list[str]:
     body = []
     for g in summarize(rows):
-        section = f"{g['mode']} / {g['model']}"
+        section = _section(g)
         body.append((section, [
             g["profile"], g["prompt"], str(g["n"]), str(g["ok"]), str(g["goal_ok"]),
             *(_cell(g[f], g["n"]) for f in SHOWN),
         ]))  # fmt: skip
+        if g["mcp_connected"]:
+            body.append((section, f"MCP servers connected at start: {g['mcp_connected']}"))
     return _sectioned(["profile", "prompt", "n", "ok", "goal", *SHOWN], body, left=2)
 
 
 def _token_lines(rows: list[dict]) -> list[str]:
     """Token table: medians per group, and for n > 1 their min–max on the line below.
 
-    In one line, "median (min–max)" for six columns would not fit 120 columns.
+    In one line, "median (min–max)" for six columns would not fit 130 columns.
     """
     body = []
     for g in summarize(rows):
-        section = f"{g['mode']} / {g['model']}"
+        section = _section(g)
         fmts = [_usd if f == "api_equiv_usd" else _fmt for f, _ in TOKEN_COLUMNS]
         stats = [g[f] for f, _ in TOKEN_COLUMNS]
         body.append((section, [
@@ -240,7 +275,7 @@ def render(rows: list[dict]) -> str:
     if not rows:
         return "No results yet."
     parts = [
-        "Runs per mode, model, profile and prompt: median, then min–max when n > 1",
+        "Runs per mode, model, effort, profile and prompt: median, then min–max when n > 1",
         *_summary_lines(rows),
         "",
         "Starting point and growth per context: median, tokens",

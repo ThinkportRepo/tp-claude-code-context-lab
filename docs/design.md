@@ -48,17 +48,32 @@ A run reaches the goal (`goal_ok`) when both hold:
 
 ## Test matrix
 
-Three profiles × two prompts = six tests, defined in `lab/matrix.conf`:
+Four profiles × two prompts = eight tests, plus one model test, defined
+in `lab/matrix.conf`:
 
 ```
-# id     profile      prompt        [model]
-test1    clean        simple
-test2    clean        well-defined
-test3    superpowers  simple
-test4    superpowers  well-defined
-test5    dev-stack    simple
-test6    dev-stack    well-defined
+# id     profile      [prompt]                [model]           [effort]
+test1    clean        prompt-simple.md
+test2    clean        prompt-well-defined.md
+test3    superpowers  prompt-simple.md
+test4    superpowers  prompt-well-defined.md
+test5    dev-stack    prompt-simple.md
+test6    dev-stack    prompt-well-defined.md
+test7    dev-messy    prompt-simple.md
+test8    dev-messy    prompt-well-defined.md
+test9    clean        prompt-simple.md        claude-sonnet-5   medium
 ```
+
+The columns are `id profile [prompt] [model] [effort]`
+([matrix.md](matrix.md) has examples). The prompt is a file path relative
+to the lab root; it must be a file inside the lab root. A prompt column
+of `-`, or none, means `prompt-simple.md`. A model column of `-` means the
+default model (see [Model](#model)), so a test can set an effort without
+naming a model. `effort` is `low`, `medium`, `high`, `xhigh` or `max`; a
+test with an effort passes `--effort <level>` to every `claude` call that
+reaches the model (headless turns, follow-ups, the interactive session),
+a test without one passes no `--effort`. The usage-limit probe never
+passes one. Errors in the file name the file and line.
 
 Test ids must match `test[A-Za-z0-9_-]*`, profile names `[a-z0-9][a-z0-9-]*`.
 This keeps every repository named `lab-test…`, which teardown can find, and
@@ -69,10 +84,14 @@ fresh state.
 
 ### Prompts
 
-| Prompt | File | Content |
-|---|---|---|
-| `simple` | `lab/prompts/simple.txt` | One sentence: create the app in the `xyz` directory, publish it with GitHub Pages, link it in the About section. |
-| `well-defined` | `well-defined-prompt` | The same task with explicit requirements, branch-based Pages publishing, the About link, and verification steps. |
+| File | Content |
+|---|---|
+| `prompt-simple.md` | One sentence: create the app in the `xyz` directory, publish it with GitHub Pages, link it in the About section. |
+| `prompt-well-defined.md` | The same task with explicit requirements, branch-based Pages publishing, the About link, and verification steps. |
+
+`results.csv`, the report and the run output show the prompt as the path
+written in `matrix.conf`. Rows recorded before the prompt became a file
+path show `simple` or `well-defined` and form groups of their own.
 
 Both prompts name the directory `xyz`. Each test therefore places its
 repository at `sandbox/<test>/xyz` and starts Claude in `sandbox/<test>`,
@@ -97,6 +116,7 @@ with Claude Code, so no extra marketplace is needed.
 | `clean` | none |
 | `superpowers` | `superpowers` |
 | `dev-stack` | `superpowers`, `frontend-design`, `microsoft-docs`, `playwright` |
+| `dev-messy` | ten skill plugins and two MCP plugins (two plugin servers), plus nine user-scope MCP servers (see [dev-messy](#dev-messy)) |
 
 `dev-stack` stands for a typical developer setup, built from the most
 installed plugins in the official marketplace. Install counts and token
@@ -127,7 +147,106 @@ Rejected for `dev-stack`:
 
 Every profile's `settings.json` holds the plugin list (`enabledPlugins`) and
 the shared permission lists (see [Permissions](#permissions)). `dev-stack`
-also allows its two MCP servers.
+also allows its two MCP servers, `dev-messy` its eleven.
+
+A profile can also have an `mcp.json` with MCP servers that no plugin
+ships, in the format `{"mcpServers": {"<name>": {...}}}`. The lab writes
+them as top-level `mcpServers` into the run's fresh `.claude.json`, which
+is where Claude Code keeps user-scope servers (the scope that
+`claude mcp add --scope user` writes). In a server's `args` and in the
+values of its `env`, `{work}` is replaced with the test's work dir,
+`sandbox/<test>`, and `{config}` with the run's fresh config dir,
+`sandbox/<test>/config`. These servers need
+no install step: `npx` fetches them when the session starts. A missing
+file means no servers; an invalid one stops the run before the config
+dir is touched. Only `dev-messy` has an `mcp.json`.
+
+#### dev-messy
+
+`dev-messy` is a stress test for a setup that has grown over time: many
+skills and MCP servers, with heavy overlap between them. It shows how much
+such a setup adds to the context and whether the overlap confuses the
+model. It is not a recommendation.
+
+Plugins, all from `claude-plugins-official`:
+
+- skills: `superpowers`, `frontend-design`, `code-review`,
+  `pr-review-toolkit`, `code-simplifier`, `feature-dev`,
+  `commit-commands`, `claude-md-management`, `skill-creator`,
+  `claude-code-setup`;
+- MCP servers: `playwright`, `microsoft-docs`.
+
+User-scope MCP servers in `lab/profiles/dev-messy/mcp.json`, each pinned
+to an exact version that is published and not deprecated on npm (checked
+2026-10-14). None needs a login; all local servers run through `npx`:
+
+| Server | Package or URL |
+|---|---|
+| `filesystem` | `@modelcontextprotocol/server-filesystem@1.0.0`, limited to `{work}` |
+| `memory` | `@modelcontextprotocol/server-memory@1.0.0`, memory file in `{config}` |
+| `sequential-thinking` | `@modelcontextprotocol/server-sequential-thinking@1.0.0` |
+| `everything` | `@modelcontextprotocol/server-everything@1.0.0` |
+| `context7` | `@upstash/context7-mcp@4.4.1`, telemetry off |
+| `chrome-devtools` | `chrome-devtools-mcp@1.10.1 --isolated`, usage statistics off |
+| `playwright` | `@playwright/mcp@0.0.83 --isolated` |
+| `git` | `@cyanheads/git-mcp-server@2.15.3` |
+| `deepwiki` | `https://mcp.deepwiki.com/mcp` (HTTP, no auth) |
+
+The overlap is deliberate: three browser servers (the `playwright`
+plugin's server, and the user-scope `playwright` and `chrome-devtools`),
+three docs and lookup servers (`context7`, `deepwiki` and the `microsoft-docs`
+plugin's `microsoft-learn`), a `git` server next to the `git` and `gh`
+CLIs, and `filesystem` next to the built-in file tools.
+`chrome-devtools-mcp` was rejected for `dev-stack` because of this
+overlap. `context7` was rejected there because the remote server
+needs an OAuth login; `dev-messy` runs the npm package locally, which
+needs none.
+
+An overlap only counts if the configs differ. Claude Code drops a
+plugin's MCP server when a user-scope server has the same URL (observed
+in the live `test7` and `test8` runs, 2026-10-14, Claude Code 2.1.299;
+not documented): a user-scope copy of the `microsoft-docs` plugin's
+`microsoft-learn` replaced the plugin's server instead of adding a second
+one, so it was removed (R45). The `playwright` overlap survives because
+the configs differ: the plugin runs `@playwright/mcp@latest`, the
+user-scope server `@playwright/mcp@0.0.83 --isolated`.
+
+The browser servers run isolated (R46). By default both keep a persistent
+browser profile in the user's home directory: `@playwright/mcp` one per
+workspace (on macOS under `~/Library/Caches/ms-playwright-mcp/`),
+`chrome-devtools-mcp` one shared profile in
+`~/.cache/chrome-devtools-mcp/chrome-profile`. Browser cache, cookies and
+history would then carry over from one run of a test to the next, and
+two copies of a server would lock each other's profile. With
+`--isolated` each server start gets a fresh browser profile:
+`@playwright/mcp` keeps it in memory, `chrome-devtools-mcp` creates a
+temporary directory and deletes it when the browser closes. Nothing is
+reused by the next run. The user-scope servers get the
+flag in `mcp.json`; for the `playwright` plugin's server, whose args the
+lab cannot change, every run sets `PLAYWRIGHT_MCP_ISOLATED=1`, which
+covers `dev-stack` too. The `chrome-devtools-mcp` plugin was removed from
+`dev-messy`, since `chrome-devtools-mcp` has no environment switch for
+isolation.
+
+No server may keep state outside the run or send telemetry (R42; checked
+in the published npm packages, 2026-10-14):
+
+- `memory` would store `memory.jsonl` in the shared npx cache, so memory
+  would carry over between runs. `MEMORY_FILE_PATH` puts it in the config
+  dir, which every run recreates and which is not part of the test repo.
+- `context7` runs OpenTelemetry metrics unless `OTEL_SDK_DISABLED=true`,
+  which its `env` sets.
+- `chrome-devtools-mcp` sends usage statistics to Google and checks for
+  updates. The lab sets `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1` and
+  `CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1` in every run's environment,
+  which MCP servers inherit, so the server is covered whether it comes
+  from `mcp.json` or from a plugin.
+- `desktop-commander` is excluded: its telemetry is on by default, it
+  writes state into the user's home directory, and its tools run any
+  shell command outside the shared `Bash` allow and deny lists.
+- `playwright-automation` (`@executeautomation/playwright-mcp-server`) is
+  excluded (R43): in stdio mode it always writes
+  `~/playwright-mcp-server.log` in the user's home directory.
 
 ### Model
 
@@ -138,8 +257,12 @@ longer be comparable.
 - Default: `claude-haiku-5-5`, the cheapest current model. At API list
   prices in October 2026 it costs $0.10 / $0.50 per million input/output
   tokens, against $2 / $10 for Sonnet 5.5 and $4 / $20 for Opus 5.5.
-- Precedence: the `model` column in `matrix.conf`, then `LAB_MODEL`, then
-  the default.
+- Precedence: the `model` column in `matrix.conf` (unless it is `-`),
+  then `LAB_MODEL`, then the default.
+- Effort: only a test with an `effort` column passes `--effort`; the
+  others run at the model's default effort. `test9` runs on
+  `claude-sonnet-5` at `medium` effort to compare a larger model with the
+  default.
 - How much each model counts against the subscription's usage limits is
   not published. The lab records the 5-hour limit before and after every
   run, so the effect is measured rather than assumed.
@@ -178,6 +301,27 @@ statistics, subprocess timeouts (`timeout` is not on macOS by default), and
 the token flows are fragile in shell, BSD/GNU tool differences hurt
 portability, and testing would need an extra tool.
 
+### Prerequisites outside the repository
+
+Besides Python, `git`, `gh` and `claude`, the `dev-stack` and `dev-messy`
+profiles need two things on the machine:
+
+- Node.js with `npx`, which starts the MCP servers of their plugins and
+  the servers in `dev-messy`'s `mcp.json`.
+- Google Chrome, for the browser MCP servers. The MCP server of the
+  `playwright` plugin uses the installed Google Chrome (verified
+  2026-10-14: during a probe run the installed Chrome's browser binary
+  was accessed, and Playwright's own Chromium was not). The lab is not a Node
+  project, so it does not install a browser itself.
+
+`lab.py` keeps these profiles in one set, `MCP_PROFILES`. Preflight checks
+`npx` whenever the matrix contains one of them. `lab.py setup` then also
+checks for Google Chrome and prints a warning, not an error, if it is
+missing: the app bundle in `/Applications` or `~/Applications` on macOS,
+or `google-chrome`, `google-chrome-stable` or `chrome` on `PATH`
+elsewhere. Without Chrome, runs of these profiles may fail to open a
+browser.
+
 ### Layout
 
 The code calls the directory that holds `lab.py` the **lab root**
@@ -186,15 +330,16 @@ The code calls the directory that holds `lab.py` the **lab root**
 ```
 lab.py                       # entry point: tokens | setup | run | session | report | teardown
 lab/
-├── matrix.conf              # one line per test: <id> <profile> <prompt> [model]
-├── profiles/<name>/settings.json
+├── matrix.conf              # one line per test: <id> <profile> [prompt] [model] [effort]
+├── profiles/<name>/
+│   ├── settings.json        # plugins and permission lists
+│   └── mcp.json             # optional: user-scope MCP servers (dev-messy only)
 ├── prompts/
-│   ├── simple.txt
 │   └── followups.txt        # fixed answers for automated runs
 ├── labkit/                  # Python package
 │   ├── env.py               # .env loading and writing (mode 600)
 │   ├── preflight.py         # checks before every command except tokens and report
-│   ├── config.py            # matrix, profiles, prompts, follow-ups
+│   ├── config.py            # matrix, profiles, prompt files, follow-ups
 │   ├── tokens.py            # `tokens` commands
 │   ├── github_auth.py       # PAT form URL, permission checklist, browser
 │   ├── github.py            # gh/git wrapper: repos, Pages, goal check, S5 check
@@ -207,7 +352,8 @@ lab/
 │   ├── statusline.py        # live context/token display
 │   └── teardown.py          # remove repos, sandbox, secrets
 └── tests/                   # unittest, transcript fixtures, a fake `claude`
-well-defined-prompt          # the well-defined prompt
+prompt-simple.md             # the default prompt: one sentence
+prompt-well-defined.md       # the same task with explicit requirements
 .env.example                 # documents every variable, no values
 .env                         # gitignored; created by `lab.py tokens`
 results.csv                  # gitignored; one row per run
@@ -229,9 +375,18 @@ contains only:
 
 - `settings.json`: the profile's settings plus the lab's status line;
 - `.claude.json`: onboarding marked as done, a theme, and the test directory
-  marked as trusted, so an interactive session starts without dialogs.
+  marked as trusted, so an interactive session starts without dialogs;
+  plus the profile's `mcp.json` servers as user-scope `mcpServers`, if it
+  has any.
 
 Nothing is read from or written to the user's own Claude config.
+
+Claude runs in `sandbox/<test>` itself, and what it writes there outside
+`xyz/` (a helper script, `.playwright-mcp/` snapshots) would still be
+there for the next run. So before each run, headless or interactive, the
+lab removes every entry in `sandbox/<test>` except `config/`, `results/`,
+`xyz/` and the `.git` boundary file (R47). `sandbox/` belongs to the lab:
+a file put there by hand is deleted too.
 
 Listing plugins in `enabledPlugins` alone does not install them in a fresh
 config dir: headless Claude Code fetches the marketplace but installs
@@ -280,9 +435,12 @@ Rejected after live probes:
 - Moving the sandbox to a temporary directory: works, but the sandbox was
   to stay inside the repository.
 
-Preflight also warns if a `CLAUDE.md`, `CLAUDE.local.md` or `.claude/`
-exists in a parent directory of the sandbox (other than `~/.claude`), since
-Claude Code reads `CLAUDE.md` files from parent directories.
+Preflight also warns if a `CLAUDE.md`, `CLAUDE.local.md` or
+`.claude/CLAUDE.md` exists in a parent directory of the sandbox (other
+than `~/.claude/CLAUDE.md`), since Claude Code may load these as memory,
+which skews token counts. A parent `.claude/` directory that holds only
+settings does not warn: Claude Code reads `.claude/settings*.json` only in
+the project directory itself.
 
 ### Git and gh config isolation
 
@@ -436,8 +594,8 @@ revoke it, and teardown exits with status 1.
   ([revoke API](https://docs.github.com/en/rest/credentials/revoke)), which
   needs no other credential. Its answer (202 Accepted) proves nothing, so
   the lab then calls `GET /user` with the old token: 401 means revoked.
-  While the token still answers 200, the check is checked up to four
-  times, five seconds apart.
+  While the token still answers 200, it is checked up to four times, five
+  seconds apart.
 - **Claude:** there is no CLI or API to revoke a setup token
   ([anthropics/claude-code#48373](https://github.com/anthropics/claude-code/issues/48373)).
   The lab opens the claude.ai settings page that lists Claude Code tokens
@@ -474,12 +632,15 @@ or a repository could not be deleted, because a second teardown needs it.
    no CLI command to read the limit without an API call; the probe costs
    one small Haiku call, and the run under test never sees it. Its value is
    the run's `limit_5h_start_pct`.
-3. **Reset** — rebuild `sandbox/<test>/config` from the profile and install
-   its plugins; delete the GitHub repository `lab-<test>` if present and
-   recreate it (public, Pages off); re-initialize `sandbox/<test>/xyz` with
-   the remote set and no commits.
-4. **First turn** — `claude -p "<prompt>" --model <model> --permission-mode
-   default --output-format stream-json --verbose` in `sandbox/<test>`.
+3. **Reset** — remove an earlier run's leftovers in `sandbox/<test>`
+   (every entry except `config/`, `results/`, `xyz/` and the `.git`
+   boundary file; R47); rebuild `sandbox/<test>/config` from the profile
+   and install its plugins; delete the GitHub repository `lab-<test>` if
+   present and recreate it (public, Pages off); re-initialize
+   `sandbox/<test>/xyz` with the remote set and no commits.
+4. **First turn** — `claude -p "<prompt>" --model <model> [--effort
+   <effort>] --permission-mode default --output-format stream-json
+   --verbose` in `sandbox/<test>`.
 5. **Follow-ups** — while the goal is not met, `followups.txt` has lines
    left, and a session ID is known, the lab continues with
    `claude -p "<next line>" --resume <session_id> …`. Before deciding, it
@@ -513,12 +674,16 @@ inspect the profile, and records nothing.
 
 ## Permissions
 
-All profiles share base allow and deny lists; `dev-stack` adds two MCP
-allow rules:
+All profiles share base allow and deny lists; `dev-stack` and `dev-messy`
+add MCP allow rules:
 
 - `allow`: `Read`, `Edit`, `Write`, `WebFetch`, `Bash(git:*)`,
   `Bash(gh:*)`, `Bash(curl:*)`, `Bash(ls:*)`, `Bash(cat:*)`, `Bash(pwd)`,
-  `Bash(mkdir:*)`. `dev-stack` adds two allow rules, one per MCP server.
+  `Bash(mkdir:*)`. `dev-stack` and `dev-messy` add one server-level rule
+  per MCP server: `mcp__plugin_<plugin>_<server>` for a plugin's server
+  (for example `mcp__plugin_playwright_playwright`), `mcp__<server>` for
+  a user-scope server (for example `mcp__filesystem`). Without them,
+  headless runs would be denied every MCP tool call.
 - `deny`: `Bash(cd:*)`. Claude Code checks each part of a compound command,
   so `cd xyz && git status` is denied as a whole.
 
@@ -551,6 +716,7 @@ to the run.
 | Field | Definition |
 |---|---|
 | `mode`, `model` | `headless` or `interactive`; the pinned model |
+| `effort` | the test's effort level, empty if the test sets none |
 | `ctx_start` | `input + cache_read + cache_creation` tokens of the first API call of the main thread |
 | `ctx_end` | the same, for the last API call of the main thread |
 | `ctx_growth` | `ctx_end - ctx_start`: how much the task added to the context |
@@ -564,6 +730,7 @@ to the run.
 | `status` | `ok`, `failed`, `timeout`, `denied` |
 | `api_equiv_usd` | API-equivalent cost, reference only, from `totalCostUSD` |
 | `plugin_versions` | installed plugin versions |
+| `mcp_connected` | MCP servers connected at the start of a headless run, `<connected>/<total>`, from the first turn's first `system`/`init` event; empty without MCP servers or without that event (interactive sessions) |
 
 `limit_5h_end_pct` comes from the last rate-limit event of a headless run,
 or from the last status-line data of an interactive session.
@@ -602,6 +769,17 @@ or from the last status-line data of an interactive session.
   start. Claude Code loads a tool's definition through `ToolSearch` when it
   is needed, which is why an MCP server adds little to the starting
   context.
+- **MCP servers start late in headless runs.** Headless Claude Code does
+  not wait for every MCP server before its first API request (live
+  `test7` run, 2026-10-14, Claude Code 2.1.299). Turn 1 had 4 of 13
+  servers connected: the plugin servers and the two HTTP servers, while
+  every user-scope `npx` server was still pending on a cold npx cache.
+  Turns 2 and 3 had 9 of 13, a different subset each time. (That run used
+  an earlier version of `dev-messy` with 13 servers; it now has 11.) So `ctx_start` of a profile
+  with many MCP servers depends on startup timing, and servers that
+  connect later add tools during the run. The first run on a cold npx
+  cache is the slowest. `mcp_connected` records the count at the start,
+  and the report shows it (R44).
 - **Base contexts differ by mode.** In early tests (spikes, 2026-10-12,
   `claude-haiku-5-5`), an interactive session started at about 31.1 k tokens
   and a headless one at about 18.8 k, for the same model and an empty
@@ -615,14 +793,19 @@ or from the last status-line data of an interactive session.
 ### Report
 
 `lab.py report` prints three tables from `results.csv`. Groups are
-mode × model × profile × prompt; with more than one run, cells show the
-median followed by min–max. The tables fit a terminal of about 120
-columns, so mode and model appear as section headings.
+mode × model × effort × profile × prompt; with more than one run, cells
+show the median followed by min–max. The tables fit a terminal of about
+130 columns, so mode, model and effort appear as section headings, for
+example `[headless / claude-sonnet-5 / medium]`; without an effort the
+heading is `[headless / claude-haiku-5-5]`.
 
 1. **Runs** — per profile and prompt: `n` runs, `ok` (status ok), `goal`
    (runs with `goal_ok`), and `ctx_start`, `ctx_growth`, `tokens_out`,
-   `cache_read`, `limit_used` (5-hour limit end minus start).
-2. **Starting point and growth per context** — per profile and model:
+   `cache_read`, `limit_used` (5-hour limit end minus start). If a
+   group's runs recorded `mcp_connected`, a line below the row shows it,
+   for example `MCP servers connected at start: 4/13–9/13`.
+2. **Starting point and growth per context** — per profile and model
+   (with the effort after the model, if set):
    start and growth of the interactive main session, the headless main
    session, and subagents. This supports the decision whether to hand work
    to a subagent.
@@ -632,8 +815,9 @@ columns, so mode and model appear as section headings.
    roughly the number of calls times the average context size.
 
 A `results.csv` written by an older lab version with other columns is
-refused when a run tries to append to it. Move it aside (for example to
-`results-<date>.csv`, which git ignores).
+refused when a run tries to append to it, also one from before the
+`effort` column. Move it aside (for example to `results-<date>.csv`,
+which git ignores).
 
 ### Status line
 
@@ -659,6 +843,10 @@ whatever is left:
   with `--secrets`, still runs the Claude revocation step.
 - It exits with status 1 if anything asked for was not done: declined,
   skipped, a deletion failed, or a token is not proven revoked.
+
+A run of the `playwright` plugin made before R46 may have left a browser
+profile in the Playwright cache (on macOS under
+`~/Library/Caches/ms-playwright-mcp/`). Teardown does not remove it.
 
 ## Measurements
 
@@ -742,5 +930,7 @@ What the numbers show:
 ## Open items
 
 - A new `REPEAT=3` measurement with the About-link goal.
+- First measurements of `dev-messy` (`test7`, `test8`) and of the
+  Sonnet 5 test (`test9`).
 - Interactive runs were checked by hand but not measured in a series.
 - License and copyright holder (see [decisions.md](decisions.md#open-decisions)).

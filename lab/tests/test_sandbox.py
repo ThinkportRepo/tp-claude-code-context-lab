@@ -28,7 +28,7 @@ class TempRoot(unittest.TestCase):
         profile = self.lab_root / "lab" / "profiles" / "clean"
         profile.mkdir(parents=True)
         (profile / "settings.json").write_text(json.dumps({"permissions": {"allow": ["Read"]}}))
-        self.test = config.Test("t1", "clean", "simple", "m")
+        self.test = config.Test("t1", "clean", "prompt-simple.md", "m")
         self.p = sandbox.paths(self.lab_root, "t1")
 
     def tearDown(self):
@@ -91,6 +91,68 @@ class OutsideSandbox(TempRoot):
         self.assertFalse((self.victim / ".git").exists())
 
 
+class ClearWorkDir(TempRoot):
+    """Leftovers of an earlier run in sandbox/<test> are removed before the next one."""
+
+    def setUp(self):
+        super().setUp()
+        self.outside = Path(self.dir.name).resolve() / "outside"
+        self.outside.mkdir()
+        (self.outside / "target.txt").write_text("keep")
+        w = self.p.work
+        for keep in (self.p.config, self.p.results / "20261014T000000Z", self.p.repo):
+            keep.mkdir(parents=True)
+            (keep / "keep.txt").write_text("keep")
+        (w / ".git").write_text("gitdir: /nonexistent\n")
+        (w / "poll-pages.sh").write_text("#!/bin/sh\n")
+        (w / ".playwright-mcp").mkdir()
+        (w / ".playwright-mcp" / "page.yml").write_text("snapshot")
+        (w / "link").symlink_to(self.outside)
+        (w / "file-link").symlink_to(self.outside / "target.txt")
+        self.other = sandbox.paths(self.lab_root, "t2")
+        self.other.work.mkdir(parents=True)
+        (self.other.work / "poll-pages.sh").write_text("other test")
+
+    def assert_cleared(self, kept=("config", "results/20261014T000000Z", "xyz")):
+        names = sorted(e.name for e in self.p.work.iterdir())
+        self.assertEqual(names, [".git", "config", "results", "xyz"])
+        for keep in (self.p.work / k for k in kept):
+            self.assertEqual((keep / "keep.txt").read_text(), "keep")
+        self.assertEqual((self.outside / "target.txt").read_text(), "keep")  # symlink removed, not its target
+        self.assertEqual((self.other.work / "poll-pages.sh").read_text(), "other test")
+
+    def test_clear_work_dir_keeps_only_the_lab_entries(self):
+        sandbox.clear_work_dir(self.lab_root, self.test.id)
+        self.assert_cleared()
+        self.assertEqual((self.p.work / ".git").read_text(), "gitdir: /nonexistent\n")
+
+    def test_build_config_clears_the_work_dir(self):
+        sandbox.build_config(self.lab_root, self.test, self.p, self.p.base / "status.json")
+        self.assert_cleared(kept=("results/20261014T000000Z", "xyz"))  # config/ is rebuilt
+
+    def test_missing_work_dir_is_fine(self):
+        sandbox.clear_work_dir(self.lab_root, "t3")
+        self.assertFalse(sandbox.paths(self.lab_root, "t3").work.exists())
+
+    def test_refuses_a_test_id_outside_the_sandbox(self):
+        for bad in ("../outside", str(self.outside)):
+            with self.subTest(test_id=bad), self.assertRaises(ValueError):
+                sandbox.clear_work_dir(self.lab_root, bad)
+        self.assertEqual((self.outside / "target.txt").read_text(), "keep")
+
+    def test_refuses_a_work_dir_that_is_a_symlink_out_of_the_sandbox(self):
+        (self.lab_root / "sandbox" / "t9").symlink_to(self.outside)
+        with self.assertRaises(ValueError):
+            sandbox.clear_work_dir(self.lab_root, "t9")
+        self.assertEqual((self.outside / "target.txt").read_text(), "keep")
+
+    def test_invalid_profile_file_deletes_nothing(self):
+        (self.lab_root / "lab" / "profiles" / "clean" / "mcp.json").write_text("{not json")
+        with self.assertRaises(ValueError):
+            sandbox.build_config(self.lab_root, self.test, self.p, self.p.base / "status.json")
+        self.assertTrue((self.p.work / "poll-pages.sh").exists())
+
+
 class ChildEnv(TempRoot):
     def env(self, environ):
         return sandbox.child_env(environ, self.lab_root, self.p.config, CFG)
@@ -110,6 +172,15 @@ class ChildEnv(TempRoot):
         self.assertEqual(env["GH_TOKEN"], "gh-secret")
         self.assertEqual(env["CLAUDE_CONFIG_DIR"], str(self.p.config))
         self.assertEqual(env["CLAUDE_CODE_OAUTH_TOKEN"], "oauth-secret")
+
+    def test_child_env_opts_out_of_chrome_devtools_statistics(self):
+        env = self.env({"PATH": "/bin"})
+        self.assertEqual(env["CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS"], "1")
+        self.assertEqual(env["CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"], "1")
+
+    def test_child_env_runs_playwright_mcp_isolated(self):
+        # In-memory browser profile: covers the playwright plugin's server, whose args the lab cannot set.
+        self.assertEqual(self.env({"PATH": "/bin"})["PLAYWRIGHT_MCP_ISOLATED"], "1")
 
     def test_child_env_drops_the_ssh_agent(self):
         env = self.env({"SSH_AUTH_SOCK": "/tmp/agent.sock", "SSH_AGENT_PID": "42", "PATH": "/bin"})
@@ -223,6 +294,59 @@ class BuildConfig(TempRoot):
                          [".claude.json", "settings.json"])
 
 
+class ProfileMcpServers(TempRoot):
+    """mcp.json servers land in config/.claude.json as user-scope `mcpServers`."""
+
+    def write_mcp(self, text):
+        (self.lab_root / "lab" / "profiles" / "clean" / "mcp.json").write_text(text)
+
+    def build(self):
+        sandbox.build_config(self.lab_root, self.test, self.p, self.p.base / "status.json")
+        return json.loads((self.p.config / ".claude.json").read_text())
+
+    def test_no_mcp_file_no_servers(self):
+        self.assertNotIn("mcpServers", self.build())
+
+    def test_servers_written_with_work_dir_replaced(self):
+        self.write_mcp(json.dumps({"mcpServers": {
+            "filesystem": {"type": "stdio", "command": "npx", "args": ["-y", "fs@1.0.0", "{work}"]},
+            "docs": {"type": "http", "url": "https://example.invalid/mcp"},
+        }}))
+        state = self.build()
+        self.assertEqual(state["mcpServers"], {
+            "filesystem": {"type": "stdio", "command": "npx", "args": ["-y", "fs@1.0.0", str(self.p.work)]},
+            "docs": {"type": "http", "url": "https://example.invalid/mcp"},
+        })
+        self.assertIn(" ", str(self.p.work))  # one argument, even with a space in the path
+        self.assertIn("projects", state)  # the seeded state is kept
+
+    def test_placeholders_replaced_in_args_and_env(self):
+        self.write_mcp(json.dumps({"mcpServers": {
+            "mem": {
+                "type": "stdio", "command": "npx",
+                "args": ["--root={work}", "--state={config}/s", 3],
+                "env": {"MEMORY_FILE_PATH": "{config}/mcp-memory.jsonl", "WORK": "{work}", "N": 1},
+            },
+            "plain": {"type": "stdio", "command": "npx", "args": ["-y", "x@1.0.0"]},
+        }}))
+        servers = self.build()["mcpServers"]
+        work, cfg = str(self.p.work), str(self.p.config)
+        self.assertEqual(servers["mem"]["args"], [f"--root={work}", f"--state={cfg}/s", 3])
+        self.assertEqual(servers["mem"]["env"], {
+            "MEMORY_FILE_PATH": f"{cfg}/mcp-memory.jsonl", "WORK": work, "N": 1,
+        })
+        self.assertNotIn("env", servers["plain"])  # no env in mcp.json: none written
+
+    def test_invalid_mcp_file_stops_before_anything_is_deleted(self):
+        self.p.config.mkdir(parents=True)
+        (self.p.config / "keep.txt").write_text("keep")
+        self.write_mcp("{not json")
+        with self.assertRaises(ValueError) as ctx:
+            self.build()
+        self.assertIn("mcp.json", str(ctx.exception))
+        self.assertEqual((self.p.config / "keep.txt").read_text(), "keep")
+
+
 class PluginVersions(TempRoot):
     def test_missing_file_gives_empty_dict(self):
         self.assertEqual(sandbox.plugin_versions(self.p.config), {})
@@ -327,7 +451,7 @@ class InstallPlugins(TempRoot):
             json.dumps({"enabledPlugins": {PLUGIN: True}, "permissions": PERMISSIONS})
         )
         self.status_file = self.p.results / "ts" / "statusline.json"
-        sandbox.build_config(self.lab_root, config.Test("t1", "sp", "simple", "m"), self.p, self.status_file)
+        sandbox.build_config(self.lab_root, config.Test("t1", "sp", "prompt-simple.md", "m"), self.p, self.status_file)
         self.log = self.p.base / "claude.log"
         environ = {k: v for k, v in os.environ.items() if not k.startswith("FAKE_CLAUDE_")}
         environ.update(PATH=f"{FAKES}{os.pathsep}{os.environ.get('PATH', '')}", FAKE_CLAUDE_LOG=str(self.log))

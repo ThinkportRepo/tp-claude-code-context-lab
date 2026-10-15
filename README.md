@@ -1,92 +1,109 @@
 # Claude Code Context Lab
 
-The lab measures the context size and token use of Claude Code setups. It
-runs the same task under different profiles (which plugins are installed)
-and prompts (short or detailed), reads the session transcripts, and
-reports the numbers per profile and prompt. It is a demo for Thinkport AI
-Café No. 7.
+The lab measures how much context and how many tokens Claude Code uses for
+the same task under different setups: plugins, skills and MCP servers,
+prompt, model and effort. You compare setups with measurements instead of
+guesses.
 
-## Why it is useful
+## Requirements
 
-Plugins, skills and MCP servers all add to Claude Code's context. The lab
-shows how much each setup adds at the start and how much the task itself
-consumes, so you can compare setups with measurements instead of guesses.
+- A Claude subscription (not API billing) and the Claude Code CLI (`claude`)
+- Python 3.11 or newer (standard library only)
+- `git` and the GitHub CLI (`gh`)
+- A new, empty GitHub organization in which you are an admin
+- Node.js with `npx` and Google Chrome, for the `dev-stack` and
+  `dev-messy` profiles
 
-## Getting started
+## Quick start
 
-### Prerequisites
+> [!WARNING]
+> The lab creates **public** test repositories, so use an organization
+> that holds nothing else. The lab's tokens live in `.env`; revoke them with
+> `python3 lab.py teardown --secrets` when you are done.
 
-- A Claude subscription and the Claude Code CLI (`claude`). The lab uses
-  the subscription, not API billing.
-- Python 3.11 or newer. The lab uses the standard library only.
-- `git` and the GitHub CLI (`gh`).
-- Node.js with `npx`, if `lab/matrix.conf` contains a `dev-stack` test (the
-  default file does). `setup`, `run` and `session` need it then.
-- A new, empty GitHub organization in which you are an admin. Create it in
-  the browser; `gh` cannot create organizations.
+Run the commands from the repository root, one step at a time.
 
-### Quick start
+1. Create the Claude token and store it in `.env`:
 
-Run these from the repository root, in this order:
+   ```sh
+   python3 lab.py tokens claude
+   ```
 
-```sh
-# 1. Create the Claude token (one browser approval); stored in .env.
-python3 lab.py tokens claude
+2. Set your organization in `.env` by hand (see `.env.example`):
 
-# 2. Add your organization to .env by hand (see .env.example):
-#    LAB_GH_ORG=your-lab-org
+   ```
+   LAB_GH_ORG=<organization>
+   ```
 
-# 3. Create a fine-grained GitHub token, valid 1 day. Set "Repository
-#    access" to "All repositories" in the pre-filled form and paste the token.
-python3 lab.py tokens github
+3. Create a fine-grained GitHub token (valid 1 day) and store it:
 
-# 4. Check the token: create, push, publish and delete a test repository.
-python3 lab.py tokens github --check
+   ```sh
+   python3 lab.py tokens github
+   ```
 
-# 5. Check access, install the Playwright browser, create the sandbox.
-python3 lab.py setup
+4. Check the token: create, push, publish and delete a test repo:
 
-# 6. Run one test headless and record it in results.csv.
-python3 lab.py run test1
+   ```sh
+   python3 lab.py tokens github --check
+   ```
 
-# 7. Show the comparison tables.
-python3 lab.py report
+5. Check GitHub access and create the sandbox dirs:
 
-# 8. Optional: run a test interactively in your terminal (/exit ends it).
-python3 lab.py session test3
+   ```sh
+   python3 lab.py setup
+   ```
 
-# 9. When you are done: delete the lab's repositories and sandbox, and
-#    revoke both tokens.
-python3 lab.py teardown --secrets
+6. Run one test headless and record it in `results.csv`:
+
+   ```sh
+   python3 lab.py run test1
+   ```
+
+7. Summarize `results.csv`:
+
+   ```sh
+   python3 lab.py report
+   ```
+
+8. Optional: run a test interactively in this terminal (`/exit` ends it):
+
+   ```sh
+   python3 lab.py session test3
+   ```
+
+9. When you are done: delete the lab repos and sandbox, revoke the tokens:
+
+   ```sh
+   python3 lab.py teardown --secrets
+   ```
+
+`python3 lab.py --help` lists all commands and options.
+
+## Configure tests
+
+Each line of `lab/matrix.conf` is one test: an id, a profile, and
+optionally a prompt file, a model and an effort level.
+
+```
+test1    clean        prompt-simple.md
+test2    clean        prompt-well-defined.md
+test9    clean        prompt-simple.md        claude-sonnet-5   medium
 ```
 
-Run `python3 lab.py --help`, or `python3 lab.py <command> --help`, for all
-commands and options.
-
-Before you start:
-
-- The lab creates **public** test repositories. Use a new, empty
-  organization that holds nothing else.
-- The Claude token is valid for one year, the GitHub token for one day.
-  Both are stored in `.env` (mode 600, not committed).
-- Run `python3 lab.py teardown --secrets` after the lab to revoke the
-  tokens.
+[docs/matrix.md](docs/matrix.md) describes the columns and has examples.
 
 ## Documentation
 
-- [docs/design.md](docs/design.md): what the lab measures and how,
-  including the measurements
+- [docs/design.md](docs/design.md): what the lab measures and how, with measurements
+- [docs/matrix.md](docs/matrix.md): the test matrix, with examples
 - [docs/decisions.md](docs/decisions.md): the decisions, with reasons
-- [docs/implementation-history.md](docs/implementation-history.md): how
-  the lab was built
-- [SECURITY.md](SECURITY.md): credentials, recommendations, reporting a
-  vulnerability
-- [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md)
+- [docs/implementation-history.md](docs/implementation-history.md): how the lab was built
 
-## Help and maintainers
+## Contributing and security
 
-Ask questions and report problems in the GitHub issues of this repository.
-Thinkport GmbH maintains the lab.
+Ask questions and report problems in the GitHub issues; see
+[CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and
+[ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md). Thinkport GmbH maintains the lab.
 
 ## License
 

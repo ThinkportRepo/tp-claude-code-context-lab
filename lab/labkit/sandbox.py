@@ -49,6 +49,18 @@ def child_env(
     Drops every CLAUDE*/ANTHROPIC* variable so no outside login or setting
     leaks in, then pins the lab's credentials and stops git from walking up
     into the lab's own repository.
+
+    It also opts chrome-devtools-mcp out of its usage statistics (sent to
+    Google by default) and its update checks. MCP servers inherit Claude
+    Code's environment, so this covers a user-scope server and a plugin's
+    server alike: no run phones home, and no network call outside the task
+    adds noise to the measurement.
+
+    `PLAYWRIGHT_MCP_ISOLATED=1` is the environment form of `@playwright/mcp`'s
+    `--isolated`: an in-memory browser profile instead of a persistent one
+    under the user's home directory, keyed by the work dir. Without it, the
+    `playwright` plugin's server (whose args the lab cannot set) would carry
+    browser cache, cookies and history from one run of a test to the next.
     """
     sandbox_dir = (lab_root / "sandbox").resolve()
     env = gh_env(environ, cfg["GH_TOKEN"], sandbox_dir / ".gh")  # drops CLAUDE*/ANTHROPIC* too
@@ -56,6 +68,9 @@ def child_env(
         CLAUDE_CONFIG_DIR=str(config_dir),
         CLAUDE_CODE_OAUTH_TOKEN=cfg["CLAUDE_CODE_OAUTH_TOKEN"],
         GIT_CEILING_DIRECTORIES=str(sandbox_dir),
+        CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS="1",
+        CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS="1",
+        PLAYWRIGHT_MCP_ISOLATED="1",
     )
     return env
 
@@ -81,18 +96,75 @@ def write_git_boundary(work_dir: Path, *, lab_root: Path) -> None:
     git_path.write_text("gitdir: /nonexistent\n")
 
 
+# What the lab itself keeps in sandbox/<test>; everything else there is a run's leftover.
+WORK_DIR_KEEP = frozenset({"config", "results", REPO_DIRNAME, ".git"})
+
+
+def clear_work_dir(lab_root: Path, test_id: str) -> None:
+    """Remove every entry directly in sandbox/<test_id> except WORK_DIR_KEEP.
+
+    Claude runs in that directory, and files it writes there outside `xyz/`
+    (scripts, `.playwright-mcp/` snapshots) would otherwise be there for the
+    next run. The directory comes from `paths`, so an id that leads outside
+    `<lab_root>/sandbox` is refused. A symlink is removed itself, never its
+    target, and `rmtree` does not follow symlinks inside a directory.
+    """
+    work = paths(lab_root, test_id).work
+    if not work.is_dir():
+        return
+    for entry in work.iterdir():
+        if entry.name in WORK_DIR_KEEP:
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+
+
+def _with_placeholders(server: dict, values: dict[str, str]) -> dict:
+    """A copy of an MCP server config with placeholders filled in.
+
+    Each `{name}` from `values` is replaced in the string items of `args`
+    and in the string values of `env`; nothing else is touched, and a server
+    without `args` or `env` gets none.
+    """
+
+    def fill(value):
+        if not isinstance(value, str):
+            return value
+        for name, replacement in values.items():
+            value = value.replace("{" + name + "}", replacement)
+        return value
+
+    out = dict(server)
+    if isinstance(server.get("args"), list):
+        out["args"] = [fill(a) for a in server["args"]]
+    if isinstance(server.get("env"), dict):
+        out["env"] = {key: fill(v) for key, v in server["env"].items()}
+    return out
+
+
 def build_config(lab_root: Path, test: config.Test, p: SimpleNamespace, status_file: Path) -> None:
     """Recreate p.config with the profile's settings, a status line and a trusted cwd.
 
-    `p` must be `paths(lab_root, test.id)`; anything else is refused before
-    anything is deleted.
+    Also removes an earlier run's leftovers from the work dir
+    (`clear_work_dir`), so every run starts with the same files.
+
+    The profile's mcp.json servers become user-scope `mcpServers` in
+    `.claude.json`. In their args and env values, `{work}` becomes the work
+    dir and `{config}` this fresh config dir, so a server can keep its state
+    in a place that every run recreates.
+    `p` must be `paths(lab_root, test.id)`, and the profile files must
+    parse; otherwise this raises before anything is deleted.
     """
     expected = paths(lab_root, test.id)
     if (p.config.resolve(), p.work.resolve()) != (expected.config, expected.work):
         raise ValueError(f"refusing to rebuild {p.config}: not the config dir of test {test.id!r}")
+    settings = config.profile_settings(lab_root, test.profile)
+    servers = config.profile_mcp_servers(lab_root, test.profile)
+    clear_work_dir(lab_root, test.id)
     shutil.rmtree(p.config, ignore_errors=True)
     p.config.mkdir(parents=True)
-    settings = config.profile_settings(lab_root, test.profile)
     settings["statusLine"] = {
         "type": "command",
         "command": f"python3 {shlex.quote(str(STATUSLINE_PY))} --save {shlex.quote(str(status_file))}",
@@ -105,6 +177,9 @@ def build_config(lab_root: Path, test: config.Test, p: SimpleNamespace, status_f
             str(p.work.resolve()): {"hasTrustDialogAccepted": True, "hasCompletedProjectOnboarding": True}
         },
     }
+    if servers:
+        values = {"work": str(p.work.resolve()), "config": str(p.config.resolve())}
+        state["mcpServers"] = {name: _with_placeholders(server, values) for name, server in servers.items()}
     (p.config / ".claude.json").write_text(json.dumps(state, indent=2) + "\n")
     write_git_boundary(p.work, lab_root=lab_root)
 

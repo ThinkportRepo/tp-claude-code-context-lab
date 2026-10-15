@@ -158,26 +158,53 @@ class Check(TempDirCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn("a/CLAUDE.md", warnings[0])
 
-    def test_parent_claude_local_md_and_dir_warn(self):
+    def test_parent_claude_local_md_warns(self):
         (self.tmp / "a" / "b" / "CLAUDE.local.md").write_text("x")
-        (self.tmp / "a" / ".claude").mkdir()
         _, warnings = self.run_check()
-        self.assertEqual(len(warnings), 2)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("b/CLAUDE.local.md", warnings[0])
+
+    def test_parent_dot_claude_claude_md_warns(self):
+        (self.tmp / "a" / ".claude").mkdir()
+        (self.tmp / "a" / ".claude" / "CLAUDE.md").write_text("x")
+        _, warnings = self.run_check()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("a/.claude/CLAUDE.md", warnings[0])
+
+    def test_warning_names_memory_not_settings(self):
+        (self.tmp / "a" / "CLAUDE.md").write_text("x")
+        _, warnings = self.run_check()
+        self.assertIn("may be loaded by Claude Code as memory, which skews token counts", warnings[0])
+
+    def test_parent_dot_claude_with_only_settings_does_not_warn(self):
+        # Claude Code reads settings only from the project directory, not from parents.
+        (self.tmp / "a" / ".claude").mkdir()
+        (self.tmp / "a" / ".claude" / "settings.local.json").write_text("{}")
+        (self.tmp / "a" / ".claude" / "settings.json").write_text("{}")
+        self.assertEqual(self.run_check(), ([], []))
+
+    def test_empty_parent_dot_claude_does_not_warn(self):
+        (self.tmp / "a" / ".claude").mkdir()
+        self.assertEqual(self.run_check(), ([], []))
 
     def test_sandbox_itself_is_not_a_parent(self):
         (self.sandbox / "CLAUDE.md").write_text("x")
+        (self.sandbox / ".claude").mkdir()
+        (self.sandbox / ".claude" / "CLAUDE.md").write_text("x")
         self.assertEqual(self.run_check(), ([], []))
 
-    def test_home_claude_dir_ignored(self):
+    def test_home_claude_md_ignored(self):
         sandbox = self.home / "lab" / "sandbox"
         sandbox.mkdir(parents=True)
         (self.home / ".claude").mkdir()
+        (self.home / ".claude" / "CLAUDE.md").write_text("x")
         self.assertEqual(self.run_check(sandbox=sandbox), ([], []))
 
-    def test_other_claude_dir_in_home_still_warns(self):
+    def test_other_memory_file_in_home_still_warns(self):
         sandbox = self.home / "lab" / "sandbox"
         sandbox.mkdir(parents=True)
         (self.home / "lab" / ".claude").mkdir()
+        (self.home / "lab" / ".claude" / "CLAUDE.md").write_text("x")
         _, warnings = self.run_check(sandbox=sandbox)
         self.assertEqual(len(warnings), 1)
 
@@ -192,6 +219,50 @@ class Check(TempDirCase):
         errors, warnings = self.run_check({"GH_TOKEN": "ghp_SECRETSECRET"}, need_github=True)
         for message in errors + warnings:
             self.assertNotIn("SECRETSECRET", message)
+
+
+class ChromeInstalled(TempDirCase):
+    def setUp(self):
+        super().setUp()
+        self.home = self.tmp / "home"
+        self.home.mkdir()
+        self.platform = mock.patch.object(preflight.sys, "platform", "darwin")
+        self.platform.start()
+        self.addCleanup(self.platform.stop)
+
+    @staticmethod
+    def nothing_on_path(name):
+        return None
+
+    def test_found_in_system_applications_on_macos(self):
+        app = self.tmp / "Applications" / "Google Chrome.app"
+        app.mkdir(parents=True)
+        with mock.patch.object(preflight, "MACOS_APP_DIRS", (self.tmp / "Applications",)):
+            self.assertTrue(preflight.chrome_installed(self.home, which=self.nothing_on_path))
+
+    def test_found_in_users_applications_on_macos(self):
+        (self.home / "Applications" / "Google Chrome.app").mkdir(parents=True)
+        with mock.patch.object(preflight, "MACOS_APP_DIRS", (self.tmp / "none",)):
+            self.assertTrue(preflight.chrome_installed(self.home, which=self.nothing_on_path))
+
+    def test_found_on_path_elsewhere(self):
+        with mock.patch.object(preflight.sys, "platform", "linux"):
+            for name in ("google-chrome", "google-chrome-stable", "chrome"):
+                self.assertTrue(
+                    preflight.chrome_installed(self.home, which=lambda n, want=name: f"/usr/bin/{n}" if n == want else None),
+                    name,
+                )
+
+    def test_not_found(self):
+        with mock.patch.object(preflight, "MACOS_APP_DIRS", (self.tmp / "none",)):
+            self.assertFalse(preflight.chrome_installed(self.home, which=self.nothing_on_path))
+        with mock.patch.object(preflight.sys, "platform", "linux"):
+            self.assertFalse(preflight.chrome_installed(self.home, which=self.nothing_on_path))
+
+    def test_macos_app_is_not_looked_up_on_other_systems(self):
+        (self.home / "Applications" / "Google Chrome.app").mkdir(parents=True)
+        with mock.patch.object(preflight.sys, "platform", "linux"):
+            self.assertFalse(preflight.chrome_installed(self.home, which=self.nothing_on_path))
 
 
 class Prepare(unittest.TestCase):
@@ -210,20 +281,46 @@ class Prepare(unittest.TestCase):
         self.tmp = Path(tmp.name).resolve()
         self.env_file = self.tmp / ".env"  # never the developer's real .env
 
-    def prepare(self, command, errors, warnings, file_problems=(), need_node=False):
+    def prepare(self, command, errors, warnings, file_problems=(), need_node=False, args=None,
+                results_file=None):
         cli = self.load_lab_module()
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.object(cli, "ENV_FILE", self.env_file), \
+             mock.patch.object(cli, "results_file", return_value=results_file or self.tmp / "none.csv"), \
              mock.patch.object(preflight, "check", return_value=(errors, warnings)) as check, \
              mock.patch.object(env, "file_problems", return_value=list(file_problems)), \
              mock.patch.dict("os.environ", {"GH_TOKEN": "ghp_SECRETSECRET"}), \
              contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                cfg = cli.prepare(command, argparse.Namespace(), need_node=need_node)
+                cfg = cli.prepare(command, args or argparse.Namespace(), need_node=need_node)
                 code = None
             except SystemExit as e:
                 cfg, code = None, e.code
         return cfg, code, out.getvalue() + err.getvalue(), check
+
+    def old_results(self) -> Path:
+        """A results.csv written by an older lab version (other columns)."""
+        path = self.tmp / "results.csv"
+        path.write_text("timestamp,test_id\n2026-01-01,test1\n")
+        return path
+
+    def test_old_results_file_stops_run_and_session_that_record_a_row(self):
+        path = self.old_results()
+        for command, args in (
+            ("run", argparse.Namespace()),
+            ("session", argparse.Namespace(no_prompt=False)),
+        ):
+            _, code, output, _ = self.prepare(command, [], [], args=args, results_file=path)
+            self.assertEqual(code, 1, command)
+            self.assertIn("other columns", output, command)
+
+    def test_old_results_file_does_not_stop_session_no_prompt(self):
+        # No row is recorded, so the old file is not in the way.
+        _, code, output, _ = self.prepare(
+            "session", [], [], args=argparse.Namespace(no_prompt=True), results_file=self.old_results()
+        )
+        self.assertIsNone(code, output)
+        self.assertNotIn("other columns", output)
 
     def test_prepare_reads_the_env_file_it_is_given(self):
         self.env_file.write_text("LAB_GH_ORG=from-temp-file\n")

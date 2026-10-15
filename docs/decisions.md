@@ -13,7 +13,8 @@ Each entry is marked:
 The lab was built by AI coding agents under a coordinating agent, with a
 person deciding direction and running the steps that need a browser or the
 subscription (see [implementation-history.md](implementation-history.md)).
-The rulings R1–R34 are numbered in the order they were made. Decisions the
+The rulings R1–R36 and R38–R52 are numbered in the order they were made.
+R37 was a ruling on the review process and is not listed. Decisions the
 user made without a ruling number follow after them.
 
 ## Rulings
@@ -405,6 +406,295 @@ user made without a ruling number follow after them.
 - **Cost if wrong:** a link set by a slow API call at the very end of a
   turn is missed, which costs one follow-up.
 
+### R35 — A minimal CI workflow runs the unit tests
+
+**Implementation decision.**
+
+- **Decided:** a GitHub Actions workflow runs
+  `python3 -W error -m unittest discover -s lab/tests` on Python 3.11 and
+  on the latest Python 3 (`3.x`). It has read-only permissions and does
+  nothing else.
+- **Why:** the README and design say the lab needs Python 3.11 or newer.
+  Running the tests on 3.11 backs that claim, and `3.x` with `-W error`
+  shows a new deprecation warning before users run into it.
+- **Cost if wrong:** two short CI jobs per push. A failure on `3.x` can
+  come from a new Python release rather than from a change in the lab.
+
+### R36 — Pin GitHub Actions by SHA within their current major versions
+
+**Implementation decision.**
+
+- **Decided:** the workflow pins `actions/checkout` at v4.4.0 and
+  `actions/setup-python` at v5.6.0 by commit SHA, with the tag in a
+  comment. It does not upgrade to newer major versions.
+- **Why:** a SHA cannot be moved like a tag, so what runs in CI only
+  changes with a commit. A major upgrade can change behavior and is not a
+  small fix, so it was left for a separate change.
+- **Cost if wrong:** pinned versions do not get fixes on their own;
+  someone has to update the SHAs.
+
+### R38 — The stress-test profile is called `dev-messy`
+
+**Implementation decision** (applies the user decision
+[Names announce their content](#names-announce-their-content)).
+
+- **Decided:** the profile with many overlapping skills and MCP servers is
+  named `dev-messy`.
+- **Why:** it is a developer setup like `dev-stack`, and the name says
+  what sets it apart: it has grown without cleanup.
+- **Cost if wrong:** a rename touches the profile directory,
+  `matrix.conf`, `MCP_PROFILES` in `lab.py` and the docs.
+
+### R39 — The Sonnet test uses the model ID `claude-sonnet-5`
+
+**Implementation decision.**
+
+- **Decided:** the user asked for a test on "Sonnet 5". `test9` passes the
+  model ID of Claude Sonnet 5, `claude-sonnet-5`, literally. It is not
+  `claude-sonnet-5-5`, the newer Sonnet 5.5.
+- **Why:** the request named a version, and the matrix pins exact model
+  IDs so that runs stay comparable when a newer model comes out.
+- **Cost if wrong:** if the user meant the current Sonnet, `test9`
+  measures the previous generation. The fix is one column in
+  `matrix.conf`.
+
+### R40 — Effort is an optional matrix column
+
+**Implementation decision.**
+
+- **Decided:** `matrix.conf` gets an optional fifth column, `effort`
+  (`low`, `medium`, `high`, `xhigh`, `max`). A model column of `-` means
+  the default model, so a test can set an effort alone. A test with an
+  effort passes `--effort` to every call that reaches the model (headless
+  turns, follow-ups, the interactive session), never to the usage-limit
+  probe. A test without one passes no `--effort`. `results.csv` gets an
+  `effort` column after `model`, and the report groups by it.
+- **Why:** the effort level changes how much a model thinks and therefore
+  its token use, so it is part of what a run measures and must not be
+  mixed in one median. Passing nothing when unset keeps the existing tests
+  as they were. The probe measures the account's limit, not the test.
+- **Cost if wrong:** `results.csv` files from before the change have other
+  columns and must be moved aside. `-` is one more rule to know when
+  editing the matrix.
+
+### R41 — Extra MCP servers are user-scope and pinned
+
+**Implementation decision.**
+
+- **Decided:** MCP servers that no plugin ships come from the profile's
+  `mcp.json` and are written as user-scope servers into the run's fresh
+  `.claude.json`. Each npm package is pinned to an exact version and
+  started with `npx -y`. Only servers without a login and without tools
+  beyond Node are used. Each server gets one server-level allow rule
+  (`mcp__<server>`).
+- **Why:** user scope is where a developer's own servers live
+  (`claude mcp add --scope user`), so the run sees what such a setup sees.
+  Without a pinned version, `npx` would fetch the latest release at every
+  session start, and runs on different days would not be comparable.
+  A server that needed a login did not start in a headless run (see
+  [Replace context7 with microsoft-docs](#replace-context7-with-microsoft-docs)).
+- **Cost if wrong:** pinned versions age and miss fixes until someone
+  updates them. The local servers run with the user's rights, and a
+  server-level allow rule allows all of a server's tools without a prompt.
+  A server that can run shell commands would therefore escape the shared
+  `Bash` allow and deny lists; R42 excludes the one that could. `npx`
+  downloads each package on first use, which counts toward the first
+  run's duration.
+
+### R42 — MCP servers keep no state outside the run and send no telemetry
+
+**Implementation decision** (2026-10-14, after checking the published npm
+packages).
+
+- **Decided:** an MCP server in a profile must not keep state outside the
+  run or send telemetry. For `dev-messy` this means:
+  - `desktop-commander` is excluded. Its telemetry is on by default, it
+    writes `~/.claude-server-commander`, `~/.claude-server-commander-logs`
+    and `~/.desktop-commander-device/device.json` in the user's home
+    directory, and its tools run any shell command outside the shared
+    `Bash` allow and deny lists.
+  - `memory` stores its file in the run's config dir
+    (`MEMORY_FILE_PATH={config}/mcp-memory.jsonl`). By default it writes
+    it into the shared npx cache, where it would carry over to the next
+    run.
+  - `context7` runs with `OTEL_SDK_DISABLED=true`.
+  - every run sets `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1` and
+    `CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1`, which covers the
+    chrome-devtools-mcp server whether it comes from `mcp.json` or from a
+    plugin.
+  - the browser servers get a fresh profile at every start (R46).
+- **Why:** state that survives a run makes the next run start from
+  something other than a fresh setup, which skews the measurement.
+  Telemetry sends data about the lab to third parties and adds network
+  calls that are not part of the task.
+- **Cost if wrong:** a new version of a server may add telemetry or state
+  that these opt-outs do not cover; the versions are pinned, so this only
+  happens when someone updates them. `dev-messy` has one overlapping
+  server fewer than planned.
+
+### R43 — Drop playwright-automation from dev-messy
+
+**Implementation decision** (2026-10-14, after the live `test7` run;
+applies R42).
+
+- **Decided:** `@executeautomation/playwright-mcp-server` is removed from
+  `dev-messy`, with its allow rule. The profile keeps ten user-scope and
+  three plugin MCP servers (nine user-scope after R45, two plugin
+  servers after R46).
+- **Why:** in stdio mode the server always writes
+  `~/playwright-mcp-server.log` in the user's home directory and ignores
+  `LOG_FILE_PATH`; the live run created that file. Moving it would need a
+  different `HOME` for the server, which also changes where it looks for
+  browsers.
+- **Cost if wrong:** one browser server less overlap in the stress test.
+
+### R44 — Record MCP startup instead of waiting for it
+
+**Implementation decision** (2026-10-14, after the live `test7` run).
+
+- **Decided:** the lab does not make Claude Code wait for MCP servers
+  before the first request. It records, per headless run, how many were
+  connected at the start (`mcp_connected`, from the first turn's `init`
+  event), and the report shows it per group.
+- **Why:** the lab measures what Claude Code does with a setup, and not
+  waiting is what it does: in the live run 4 of 13 servers were connected
+  at turn 1. A wait would need undocumented settings, which the lab does
+  not use. The new column makes the effect visible instead of hiding it.
+- **Cost if wrong:** `dev-messy` numbers vary from run to run with startup
+  timing and need repeats (`REPEAT`) to compare. `results.csv` files from
+  before the column must be moved aside.
+
+### R45 — Drop the user-scope copy of microsoft-learn
+
+**Implementation decision** (2026-10-14, after the live `test7` and
+`test8` runs).
+
+- **Decided:** `dev-messy` no longer has a user-scope `microsoft-learn`
+  server or its allow rule. The `microsoft-docs` plugin's server and its
+  rule stay. The profile has nine user-scope and three plugin MCP
+  servers (two plugin servers after R46).
+- **Why:** both servers had the same URL, and Claude Code then drops the
+  plugin's server (observed with Claude Code 2.1.299, not documented): the
+  init events never listed `plugin:microsoft-docs:microsoft-learn`. The
+  user-scope copy added no overlap; it only replaced the plugin's server.
+- **Cost if wrong:** none for the measurement: the same server stays
+  loaded through the plugin.
+
+### R46 — Browser MCP servers get a fresh profile at every start
+
+**Implementation decision** (2026-10-14, after a review of the branch;
+applies R42).
+
+- **Decided:** the user-scope `playwright` and `chrome-devtools` servers of
+  `dev-messy` run with `--isolated`. Every run sets
+  `PLAYWRIGHT_MCP_ISOLATED=1`, so the `playwright` plugin's server runs
+  isolated too, in `dev-stack` and `dev-messy`. The `chrome-devtools-mcp`
+  plugin is removed from `dev-messy` with its allow rule. The profile has
+  ten skill plugins and two MCP plugins, so nine user-scope and two plugin
+  MCP servers. With `--isolated`, `@playwright/mcp` keeps the browser
+  profile in memory, and `chrome-devtools-mcp` uses a temporary directory
+  that it deletes when the browser closes.
+- **Why:** by default both servers keep a persistent browser profile in
+  the user's home directory (`@playwright/mcp` under
+  `~/Library/Caches/ms-playwright-mcp/` on macOS, `chrome-devtools-mcp` in
+  `~/.cache/chrome-devtools-mcp/chrome-profile`). Browser cache, cookies
+  and history would carry over from one run of a test to the next, and two
+  copies of a server would lock each other's profile. The lab cannot
+  change the plugin's args, and `chrome-devtools-mcp` has no environment
+  switch for isolation, so that plugin had to go.
+- **Cost if wrong:** one browser overlap less in the stress test. A future
+  version of a server may change its default or the meaning of
+  `--isolated`. If Claude Code ends a run while Chrome is open,
+  `chrome-devtools-mcp` may leave its temporary profile in the system's
+  temp directory; it is never reused.
+
+### R47 — Clear an earlier run's leftovers in the work dir
+
+**Implementation decision** (2026-10-14).
+
+- **Decided:** before each run, headless or interactive, the lab removes
+  every entry directly in `sandbox/<test>` except `config/`, `results/`,
+  `xyz/` and the `.git` boundary file. It refuses a directory outside
+  `<lab_root>/sandbox`, and it removes a symlink itself, never its target.
+- **Why:** Claude starts in `sandbox/<test>`, and files it writes there
+  outside `xyz/` stayed for the next run: `test7` still had
+  `poll-pages.sh` from an earlier run, and the Playwright MCP server
+  writes snapshots to `.playwright-mcp/` in its working directory. Repeat
+  runs of a test must start alike.
+- **Cost if wrong:** a file that a user put into `sandbox/<test>` by hand
+  is deleted. `sandbox/` belongs to the lab, which already deletes and
+  rebuilds it, so nothing there is the user's to keep.
+
+### R48 — The prompts are files named `prompt-*.md` in the lab root
+
+**Implementation decision** (2026-10-15, on the user's request to move
+the simple prompt into a file like the well-defined one, with a
+`prompt-` prefix).
+
+- **Decided:** the two prompts are `prompt-simple.md` and
+  `prompt-well-defined.md`, next to each other in the repository root.
+  Their contents did not change. `lab/prompts/followups.txt` stays where
+  it is, because the follow-ups are not a task prompt.
+- **Why:** `.md` because the well-defined prompt is Markdown (it has
+  lists); the simple one is a single sentence. The root is where the
+  well-defined prompt already was.
+- **Cost if wrong:** a rename.
+
+### R49 — The matrix prompt column holds a file path
+
+**Implementation decision** (2026-10-15).
+
+- **Decided:** the prompt column of `matrix.conf` holds a file path
+  relative to the lab root, for example `prompt-well-defined.md`. The
+  column is optional; no column or `-` means `prompt-simple.md`. The file
+  must exist and be a file inside the lab root, otherwise the error names
+  the matrix file, the line and the path. The names `simple` and
+  `well-defined` are no longer accepted. `results.csv`, the report and
+  the run output show the path as written.
+- **Why:** a new prompt needs only a new file, not a code change. Showing
+  the path as written makes each row point to the file it used.
+- **Cost if wrong:** rows recorded before the change show `simple` or
+  `well-defined` and form groups of their own in the report. The
+  `results.csv` header did not change, so no header check catches it.
+
+### R50 — The model example in matrix.md uses the newest model IDs
+
+**Implementation decision** (2026-10-15).
+
+- **Decided:** the model comparison in [matrix.md](matrix.md) uses
+  `claude-haiku-5-5`, `claude-sonnet-5-5` and `claude-opus-5-5`. `test9`
+  in `matrix.conf` keeps `claude-sonnet-5` (R39).
+- **Why:** an example of a model comparison should show the current
+  models.
+- **Cost if wrong:** model IDs in an example.
+
+### R51 — No example output in the README
+
+**Implementation decision** (2026-10-15; applies the user decision
+[README and repository boilerplate](#readme-and-repository-boilerplate)
+and the user's request for a short README).
+
+- **Decided:** the README follows common open-source practice: a short
+  description, requirements, a quick start, one matrix example and links.
+  It shows no example output and no measurements. Details it no longer
+  carries are in design.md and matrix.md.
+- **Why:** the user asked for README basics only. The measurements are in
+  design.md and are shown in the demo.
+- **Cost if wrong:** one section to add.
+
+### R52 — The Runs table may be about 130 columns wide
+
+**Implementation decision** (2026-10-15; changes the width set in
+R15–R18).
+
+- **Decided:** the report's tables fit a terminal of about 130 columns,
+  not 120. With prompt file paths (R49), the Runs table reaches 127
+  columns at realistic values, for example with the profile
+  `superpowers`, `prompt-well-defined.md` and seven-digit ranges.
+- **Why:** about ten columns are not worth a new table layout.
+- **Cost if wrong:** in a terminal narrower than about 130 columns, the
+  Runs table wraps.
+
 ## Further user decisions
 
 ### Haiku as the default model
@@ -533,6 +823,61 @@ user made without a ruling number follow after them.
   this file. This overrides R28.
 - **Why:** a published lab needs a starting point and clear terms.
 - **Cost if wrong:** more files to keep in sync with the code.
+
+### Check for Google Chrome instead of installing Chromium
+
+**User decision** (2026-10-14).
+
+- **Decided:** `lab.py setup` no longer runs `npx playwright install
+  chromium`. When the matrix contains a `dev-stack` or `dev-messy` test,
+  it warns if Google Chrome is not installed.
+- **Why:** the lab never uses Playwright. Only the MCP server of the
+  `playwright` plugin does. It brings its own library and uses the
+  installed Google Chrome (verified 2026-10-14: during a probe run the
+  installed Chrome's browser binary was accessed, and Playwright's own
+  Chromium was not). The installed Chromium was therefore never used, and
+  the command printed a warning because the lab is not a Node project.
+- **Cost if wrong:** a future version of the MCP server with another
+  default browser would make these runs fail to open a browser until that
+  browser is installed.
+
+### Warn only for memory files in parent directories
+
+**User decision** (2026-10-14).
+
+- **Decided:** preflight warns only for `CLAUDE.md`, `CLAUDE.local.md` and
+  `.claude/CLAUDE.md` in parent directories of the sandbox. A parent
+  `.claude/` directory with only settings does not warn.
+- **Why:** Claude Code reads `.claude/settings*.json` only in the project
+  directory itself. From parent directories it loads memory files. The old
+  warning fired for settings that have no effect on the runs.
+- **Cost if wrong:** a future Claude Code version that reads more from
+  parent directories would go unwarned.
+
+### A stress-test profile with overlapping skills and MCP servers
+
+**User decision** (2026-10-14).
+
+- **Decided:** a profile with ten skill plugins and at least ten MCP
+  servers, with heavy overlap, all with a developer context. The user
+  asked not to be consulted on the contents; the coordinator chose them
+  (see R38 and R41–R46).
+- **Why:** real setups grow over time. The lab shows what such a setup
+  adds to the context and whether the overlap changes the result.
+- **Cost if wrong:** two more tests per `run all`, each starting eleven
+  MCP servers, and more of the usage limit spent.
+
+### One test on Sonnet 5 at medium effort
+
+**User decision** (2026-10-14).
+
+- **Decided:** one test runs on Sonnet 5 at medium effort; the default
+  model stays `claude-haiku-5-5` (see R39 and R40).
+- **Why:** to compare a larger model at a set effort with the cheap
+  default on the same task.
+- **Cost if wrong:** at API prices Sonnet 5 costs 20 times as much per
+  token as Haiku. How much more it counts against the usage limit is not
+  published; the lab records it.
 
 ## Open decisions
 

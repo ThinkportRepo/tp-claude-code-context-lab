@@ -48,12 +48,3 @@ and do not share the `sandbox/` results.
   runs. Claude Code's login screen shows the new token; the lab masks it
   where it can, but not reliably. The same applies to the GitHub token page
   during `python3 lab.py tokens github`.
-
-## Reporting a vulnerability
-
-Please do not open a public issue for a vulnerability. Report it through
-GitHub's private vulnerability reporting on this repository (*Security* →
-*Report a vulnerability*), or contact Thinkport GmbH.
-
-Maintainers: enable private vulnerability reporting in the repository
-settings. Without it, the *Report a vulnerability* button does not exist.
