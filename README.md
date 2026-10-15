@@ -21,19 +21,61 @@ guesses.
 > that holds nothing else. The lab's tokens live in `.env`; revoke them with
 > `python3 lab.py teardown --secrets` when you are done.
 
-Run these from the repository root:
+Run the commands from the repository root, one step at a time.
 
-```sh
-python3 lab.py tokens claude          # create the Claude token, store it in .env
-# set LAB_GH_ORG=<organization> in .env by hand (see .env.example)
-python3 lab.py tokens github          # create a fine-grained GitHub token (1 day), store it
-python3 lab.py tokens github --check  # create, push, publish and delete a test repo
-python3 lab.py setup                  # check GitHub access and create sandbox dirs
-python3 lab.py run test1              # run one test headless, record it in results.csv
-python3 lab.py report                 # summarize results.csv
-python3 lab.py session test3          # optional: run a test interactively in this terminal
-python3 lab.py teardown --secrets     # delete lab repos and sandbox, revoke the tokens
-```
+1. Create the Claude token and store it in `.env`:
+
+   ```sh
+   python3 lab.py tokens claude
+   ```
+
+2. Set your organization in `.env` by hand (see `.env.example`):
+
+   ```
+   LAB_GH_ORG=<organization>
+   ```
+
+3. Create a fine-grained GitHub token (valid 1 day) and store it:
+
+   ```sh
+   python3 lab.py tokens github
+   ```
+
+4. Check the token: create, push, publish and delete a test repo:
+
+   ```sh
+   python3 lab.py tokens github --check
+   ```
+
+5. Check GitHub access and create the sandbox dirs:
+
+   ```sh
+   python3 lab.py setup
+   ```
+
+6. Run one test headless and record it in `results.csv`:
+
+   ```sh
+   python3 lab.py run test1
+   ```
+
+7. Summarize `results.csv`:
+
+   ```sh
+   python3 lab.py report
+   ```
+
+8. Optional: run a test interactively in this terminal (`/exit` ends it):
+
+   ```sh
+   python3 lab.py session test3
+   ```
+
+9. When you are done: delete the lab repos and sandbox, revoke the tokens:
+
+   ```sh
+   python3 lab.py teardown --secrets
+   ```
 
 `python3 lab.py --help` lists all commands and options.
 
