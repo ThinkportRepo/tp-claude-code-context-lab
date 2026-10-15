@@ -32,7 +32,7 @@ Run the commands from the repository root, one step at a time.
 2. Set your organization in `.env` by hand (see `.env.example`):
 
    ```
-   # LAB_GH_ORG=<organization>
+   LAB_GH_ORG=<organization>
    ```
 
 3. Create a fine-grained GitHub token (valid 1 day) and store it:
