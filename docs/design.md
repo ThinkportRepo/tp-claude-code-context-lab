@@ -795,7 +795,7 @@ or from the last status-line data of an interactive session.
 `lab.py report` prints three tables from `results.csv`. Groups are
 mode × model × effort × profile × prompt; with more than one run, cells
 show the median followed by min–max. The tables fit a terminal of about
-120 columns, so mode, model and effort appear as section headings, for
+130 columns, so mode, model and effort appear as section headings, for
 example `[headless / claude-sonnet-5 / medium]`; without an effort the
 heading is `[headless / claude-haiku-5-5]`.
 
