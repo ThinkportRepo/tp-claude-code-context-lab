@@ -13,7 +13,7 @@ Each entry is marked:
 The lab was built by AI coding agents under a coordinating agent, with a
 person deciding direction and running the steps that need a browser or the
 subscription (see [implementation-history.md](implementation-history.md)).
-The rulings R1–R36 and R38–R47 are numbered in the order they were made.
+The rulings R1–R36 and R38–R50 are numbered in the order they were made.
 R37 was a ruling on the review process and is not listed. Decisions the
 user made without a ruling number follow after them.
 
@@ -624,6 +624,49 @@ applies R42).
 - **Cost if wrong:** a file that a user put into `sandbox/<test>` by hand
   is deleted. `sandbox/` belongs to the lab, which already deletes and
   rebuilds it, so nothing there is the user's to keep.
+
+### R48 — The prompts are files named `prompt-*.md` in the lab root
+
+**Implementation decision** (2026-10-15, on the user's request to move
+the simple prompt into a file like the well-defined one, with a
+`prompt-` prefix).
+
+- **Decided:** the two prompts are `prompt-simple.md` and
+  `prompt-well-defined.md`, next to each other in the repository root.
+  Their contents did not change. `lab/prompts/followups.txt` stays where
+  it is, because the follow-ups are not a task prompt.
+- **Why:** `.md` because the well-defined prompt is Markdown (it has
+  lists); the simple one is a single sentence. The root is where the
+  well-defined prompt already was.
+- **Cost if wrong:** a rename.
+
+### R49 — The matrix prompt column holds a file path
+
+**Implementation decision** (2026-10-15).
+
+- **Decided:** the prompt column of `matrix.conf` holds a file path
+  relative to the lab root, for example `prompt-well-defined.md`. The
+  column is optional; no column or `-` means `prompt-simple.md`. The file
+  must exist and be a file inside the lab root, otherwise the error names
+  the matrix file, the line and the path. The names `simple` and
+  `well-defined` are no longer accepted. `results.csv`, the report and
+  the run output show the path as written.
+- **Why:** a new prompt needs only a new file, not a code change. Showing
+  the path as written makes each row point to the file it used.
+- **Cost if wrong:** rows recorded before the change show `simple` or
+  `well-defined` and form groups of their own in the report. The
+  `results.csv` header did not change, so no header check catches it.
+
+### R50 — The model example in matrix.md uses the newest model IDs
+
+**Implementation decision** (2026-10-15).
+
+- **Decided:** the model comparison in [matrix.md](matrix.md) uses
+  `claude-haiku-5-5`, `claude-sonnet-5-5` and `claude-opus-5-5`. `test9`
+  in `matrix.conf` keeps `claude-sonnet-5` (R39).
+- **Why:** an example of a model comparison should show the current
+  models.
+- **Cost if wrong:** model IDs in an example.
 
 ## Further user decisions
 
