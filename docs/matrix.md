@@ -38,7 +38,24 @@ Each example below is a complete `lab/matrix.conf`, so `run all` runs
 exactly its tests. To keep the existing tests, add the lines instead and
 run the new tests by id.
 
-## Example 1: compare effort
+## Example 1: compare profiles
+
+The four profiles on the same prompt, model and effort; `dev-stack` and
+`dev-messy` need Node.js and Google Chrome:
+
+```
+test-profile-clean        clean        -  claude-haiku-5-5  low
+test-profile-superpowers  superpowers  -  claude-haiku-5-5  low
+test-profile-dev-stack    dev-stack    -  claude-haiku-5-5  low
+test-profile-dev-messy    dev-messy    -  claude-haiku-5-5  low
+```
+
+```sh
+python3 lab.py run all --repeat 3
+python3 lab.py report
+```
+
+## Example 2: compare effort
 
 The same model and prompt at three effort levels:
 
@@ -53,7 +70,7 @@ python3 lab.py run all --repeat 3
 python3 lab.py report
 ```
 
-## Example 2: compare models
+## Example 3: compare models
 
 Three models at the same effort and prompt:
 
@@ -68,7 +85,7 @@ python3 lab.py run all --repeat 3
 python3 lab.py report
 ```
 
-## Example 3: compare prompts
+## Example 4: compare prompts
 
 The short prompt against the detailed one, on the same model and effort:
 
