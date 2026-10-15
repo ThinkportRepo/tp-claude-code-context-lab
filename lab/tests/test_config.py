@@ -15,13 +15,15 @@ PROFILES = ("clean", "superpowers", "dev-stack", "dev-messy")
 
 
 class TempLab(unittest.TestCase):
-    """A throwaway lab directory with lab/profiles/<name>/ directories."""
+    """A throwaway lab root with lab/profiles/<name>/ directories and the two prompt files."""
 
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
-        self.lab_root = Path(self.dir.name).resolve()
+        self.lab_root = Path(self.dir.name).resolve() / "lab-root"
         for name in PROFILES:
             (self.lab_root / "lab" / "profiles" / name).mkdir(parents=True)
+        for name in ("prompt-simple.md", "prompt-well-defined.md"):
+            (self.lab_root / name).write_text(f"{name} text\n")
         self.matrix = self.lab_root / "lab" / "matrix.conf"
 
     def tearDown(self):
@@ -34,7 +36,7 @@ class TempLab(unittest.TestCase):
 
 class Matrix(TempLab):
     def test_matrix_model_precedence(self):
-        text = "test1 clean simple m-col\ntest2 clean well-defined\n"
+        text = "test1 clean prompt-simple.md m-col\ntest2 clean prompt-well-defined.md\n"
         tests = self.load(text, {"LAB_MODEL": "m-env"})
         self.assertEqual([t.model for t in tests], ["m-col", "m-env"])
         tests = self.load(text, {})
@@ -44,66 +46,106 @@ class Matrix(TempLab):
         self.assertEqual(config.DEFAULT_MODEL, "claude-haiku-5-5")
 
     def test_matrix_parses_columns_and_skips_comments(self):
-        tests = self.load("# id profile prompt\n\n  test1\tclean   simple\n")
-        self.assertEqual(tests, [config.Test("test1", "clean", "simple", config.DEFAULT_MODEL)])
+        tests = self.load("# id profile prompt\n\n  test1\tclean   prompt-simple.md\n")
+        self.assertEqual(tests, [config.Test("test1", "clean", "prompt-simple.md", config.DEFAULT_MODEL)])
 
     def test_matrix_error_names_line(self):
         with self.assertRaises(ValueError) as ctx:
-            self.load("# header\ntest1 clean simple\ntest2 clean\n")
+            self.load("# header\ntest1 clean prompt-simple.md\ntest2\n")
         self.assertIn("matrix.conf:3", str(ctx.exception))
         self.assertIn(str(self.matrix), str(ctx.exception))
 
     def test_too_many_columns_rejected(self):
         with self.assertRaises(ValueError) as ctx:
-            self.load("test1 clean simple model high extra\n")
+            self.load("test1 clean prompt-simple.md model high extra\n")
         self.assertIn("matrix.conf:1", str(ctx.exception))
         self.assertIn("[effort]", str(ctx.exception))
 
     def test_effort_column(self):
         text = (
-            "test1 clean simple\n"
-            "test2 clean simple m-col high\n"
-            "test3 clean simple - medium\n"
-            "test4 clean simple -\n"
+            "test1 clean prompt-simple.md\n"
+            "test2 clean prompt-simple.md m-col high\n"
+            "test3 clean prompt-simple.md - medium\n"
+            "test4 clean prompt-simple.md -\n"
         )
         tests = self.load(text, {"LAB_MODEL": "m-env"})
         self.assertEqual(
             [(t.model, t.effort) for t in tests],
             [("m-env", None), ("m-col", "high"), ("m-env", "medium"), ("m-env", None)],
         )
-        self.assertEqual(self.load("test1 clean simple - low\n")[0].model, config.DEFAULT_MODEL)
+        self.assertEqual(self.load("test1 clean prompt-simple.md - low\n")[0].model, config.DEFAULT_MODEL)
 
     def test_every_effort_level_parses(self):
         for level in ("low", "medium", "high", "xhigh", "max"):
             with self.subTest(effort=level):
-                self.assertEqual(self.load(f"test1 clean simple - {level}\n")[0].effort, level)
+                self.assertEqual(self.load(f"test1 clean prompt-simple.md - {level}\n")[0].effort, level)
 
     def test_invalid_effort_rejected(self):
         for bad in ("bogus", "Medium", "-"):
             with self.subTest(effort=bad):
                 with self.assertRaises(ValueError) as ctx:
-                    self.load(f"# header\ntest1 clean simple m {bad}\n")
+                    self.load(f"# header\ntest1 clean prompt-simple.md m {bad}\n")
                 self.assertIn(f"{self.matrix}:2", str(ctx.exception))
                 self.assertIn("effort", str(ctx.exception))
 
     def test_effort_defaults_to_none(self):
-        self.assertIsNone(config.Test("test1", "clean", "simple", "m").effort)
+        self.assertIsNone(config.Test("test1", "clean", "prompt-simple.md", "m").effort)
 
     def test_unknown_profile_rejected(self):
         with self.assertRaises(ValueError) as ctx:
-            self.load("test1 clean simple\ntest2 nope simple\n")
+            self.load("test1 clean prompt-simple.md\ntest2 nope prompt-simple.md\n")
         self.assertIn("matrix.conf:2", str(ctx.exception))
         self.assertIn("nope", str(ctx.exception))
 
-    def test_unknown_prompt_rejected(self):
-        with self.assertRaises(ValueError) as ctx:
-            self.load("test1 clean poem\n")
-        self.assertIn("matrix.conf:1", str(ctx.exception))
-        self.assertIn("poem", str(ctx.exception))
+    def test_prompt_column_is_a_file_in_the_lab_root(self):
+        (self.lab_root / "prompts").mkdir()
+        (self.lab_root / "prompts" / "mine.md").write_text("mine\n")
+        text = "test1 clean prompt-well-defined.md\ntest2 clean prompts/mine.md m high\n"
+        self.assertEqual([t.prompt for t in self.load(text)], ["prompt-well-defined.md", "prompts/mine.md"])
+
+    def test_prompt_dash_or_missing_column_means_default(self):
+        text = "test1 clean\ntest2 clean -\ntest3 clean - m-col high\n"
+        tests = self.load(text, {"LAB_MODEL": "m-env"})
+        self.assertEqual(config.DEFAULT_PROMPT, "prompt-simple.md")
+        self.assertEqual(
+            [(t.prompt, t.model, t.effort) for t in tests],
+            [("prompt-simple.md", "m-env", None), ("prompt-simple.md", "m-env", None),
+             ("prompt-simple.md", "m-col", "high")],
+        )  # fmt: skip
+
+    def test_prompt_file_must_exist(self):
+        for bad in ("poem.md", "lab", "lab/profiles"):  # missing, or a directory
+            with self.subTest(prompt=bad):
+                with self.assertRaises(ValueError) as ctx:
+                    self.load(f"# header\ntest1 clean {bad}\n")
+                self.assertIn(f"{self.matrix}:2", str(ctx.exception))
+                self.assertIn(repr(bad), str(ctx.exception))
+
+    def test_prompt_file_must_be_inside_the_lab_root(self):
+        outside = self.lab_root.parent / "x.md"
+        outside.write_text("outside\n")
+        (self.lab_root / "link.md").symlink_to(outside)
+        for bad in ("../x.md", str(outside), "link.md", "lab/../../x.md"):
+            with self.subTest(prompt=bad):
+                with self.assertRaises(ValueError) as ctx:
+                    self.load(f"test1 clean {bad}\n")
+                self.assertIn(f"{self.matrix}:1", str(ctx.exception))
+                self.assertIn(repr(bad), str(ctx.exception))
+                self.assertIn("lab root", str(ctx.exception))
+
+    def test_old_prompt_names_rejected(self):
+        for old in ("simple", "well-defined"):
+            with self.subTest(prompt=old):
+                with self.assertRaises(ValueError) as ctx:
+                    self.load(f"test1 clean {old}\n")
+                self.assertIn("matrix.conf:1", str(ctx.exception))
+                self.assertIn(repr(old), str(ctx.exception))
+                self.assertIn("file", str(ctx.exception))
+                self.assertIn("prompt-simple.md", str(ctx.exception))
 
     def test_duplicate_id_rejected(self):
         with self.assertRaises(ValueError) as ctx:
-            self.load("test1 clean simple\ntest1 superpowers simple\n")
+            self.load("test1 clean prompt-simple.md\ntest1 superpowers prompt-simple.md\n")
         self.assertIn("matrix.conf:2", str(ctx.exception))
         self.assertIn("test1", str(ctx.exception))
 
@@ -112,16 +154,16 @@ class Matrix(TempLab):
         for bad in ("/tmp/victim", "../..", "..", "t1", "test1/../x", "test/x", "Test1", "test.1"):
             with self.subTest(id=bad):
                 with self.assertRaises(ValueError) as ctx:
-                    self.load(f"{bad} clean simple\n")
+                    self.load(f"{bad} clean prompt-simple.md\n")
                 self.assertIn("matrix.conf:1", str(ctx.exception))
-        ids = [t.id for t in self.load("test clean simple\ntest_a-B9 clean simple\n")]
+        ids = [t.id for t in self.load("test clean prompt-simple.md\ntest_a-B9 clean prompt-simple.md\n")]
         self.assertEqual(ids, ["test", "test_a-B9"])
 
     def test_profile_names_must_be_plain(self):
         (self.lab_root / "lab" / "settings.json").write_text("{}")  # what `..` would reach
         for bad in ("..", ".", "Clean", "-x", "clean/../clean"):
             with self.subTest(profile=bad), self.assertRaises(ValueError):
-                self.load(f"test1 {bad} simple\n")
+                self.load(f"test1 {bad} prompt-simple.md\n")
 
     def test_repo_matrix_loads(self):
         tests = config.load_matrix(REPO / "lab" / "matrix.conf", {})
@@ -129,45 +171,46 @@ class Matrix(TempLab):
         self.assertEqual(
             [(t.id, t.profile, t.prompt, t.model, t.effort) for t in tests],
             [
-                ("test1", "clean", "simple", default, None),
-                ("test2", "clean", "well-defined", default, None),
-                ("test3", "superpowers", "simple", default, None),
-                ("test4", "superpowers", "well-defined", default, None),
-                ("test5", "dev-stack", "simple", default, None),
-                ("test6", "dev-stack", "well-defined", default, None),
-                ("test7", "dev-messy", "simple", default, None),
-                ("test8", "dev-messy", "well-defined", default, None),
-                ("test9", "clean", "simple", "claude-sonnet-5", "medium"),
+                ("test1", "clean", "prompt-simple.md", default, None),
+                ("test2", "clean", "prompt-well-defined.md", default, None),
+                ("test3", "superpowers", "prompt-simple.md", default, None),
+                ("test4", "superpowers", "prompt-well-defined.md", default, None),
+                ("test5", "dev-stack", "prompt-simple.md", default, None),
+                ("test6", "dev-stack", "prompt-well-defined.md", default, None),
+                ("test7", "dev-messy", "prompt-simple.md", default, None),
+                ("test8", "dev-messy", "prompt-well-defined.md", default, None),
+                ("test9", "clean", "prompt-simple.md", "claude-sonnet-5", "medium"),
             ],
         )
 
 
 class Prompts(unittest.TestCase):
-    def test_prompt_text_simple_is_lab_prompt_file(self):
-        expected = (REPO / "lab" / "prompts" / "simple.txt").read_text()
-        self.assertEqual(config.prompt_text(REPO, "simple"), expected)
+    def test_prompt_text_reads_the_file_unchanged(self):
+        for name in ("prompt-simple.md", "prompt-well-defined.md"):
+            with self.subTest(prompt=name):
+                self.assertEqual(config.prompt_text(REPO, name), (REPO / name).read_text())
+
+    def test_default_prompt_is_a_repo_file(self):
+        self.assertTrue((REPO / config.DEFAULT_PROMPT).is_file())
 
     def test_simple_prompt_text_is_pinned(self):
         self.assertEqual(
-            (REPO / "lab" / "prompts" / "simple.txt").read_text(),
+            config.prompt_text(REPO, "prompt-simple.md"),
             'Create a simple "Hello GitHub Pages" app using the Git repository located in the `xyz` '
             "directory. Publish it with GitHub Pages and link the site in the repository's About "
             "section.\n",
         )
 
-    def test_prompt_text_well_defined_is_lab_root_file(self):
-        expected = (REPO / "well-defined-prompt").read_text()
-        self.assertEqual(config.prompt_text(REPO, "well-defined"), expected)
-
     def test_every_prompt_asks_for_the_about_link(self):
         # The lab's goal includes the repo's About -> Website field, so each prompt must ask for it.
-        for name in ("simple", "well-defined"):
+        for name in ("prompt-simple.md", "prompt-well-defined.md"):
             with self.subTest(prompt=name):
                 self.assertIn("About section", config.prompt_text(REPO, name))
 
-    def test_prompt_text_unknown_rejected(self):
-        with self.assertRaises(ValueError):
-            config.prompt_text(REPO, "poem")
+    def test_prompt_text_rejects_missing_or_outside_files(self):
+        for bad in ("poem.md", "simple", "lab", "../x.md"):
+            with self.subTest(prompt=bad), self.assertRaises(ValueError):
+                config.prompt_text(REPO, bad)
 
     def test_followups_skip_comments(self):
         with tempfile.TemporaryDirectory() as d:
@@ -335,9 +378,9 @@ class CliWiring(TempLab):
             return cli.matrix_needs_node()
 
     def test_need_node_only_with_an_mcp_profile_in_matrix(self):
-        self.assertFalse(self.needs_node("test1 clean simple\ntest2 superpowers simple\n"))
-        self.assertTrue(self.needs_node("test1 clean simple\ntest2 dev-stack simple\n"))
-        self.assertTrue(self.needs_node("test1 clean simple\ntest2 dev-messy simple\n"))
+        self.assertFalse(self.needs_node("test1 clean prompt-simple.md\ntest2 superpowers prompt-simple.md\n"))
+        self.assertTrue(self.needs_node("test1 clean prompt-simple.md\ntest2 dev-stack prompt-simple.md\n"))
+        self.assertTrue(self.needs_node("test1 clean prompt-simple.md\ntest2 dev-messy prompt-simple.md\n"))
 
     def test_repo_matrix_needs_node(self):
         self.assertTrue(self.load_lab_module().matrix_needs_node())

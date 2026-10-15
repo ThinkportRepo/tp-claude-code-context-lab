@@ -28,7 +28,7 @@ class TempRoot(unittest.TestCase):
         profile = self.lab_root / "lab" / "profiles" / "clean"
         profile.mkdir(parents=True)
         (profile / "settings.json").write_text(json.dumps({"permissions": {"allow": ["Read"]}}))
-        self.test = config.Test("t1", "clean", "simple", "m")
+        self.test = config.Test("t1", "clean", "prompt-simple.md", "m")
         self.p = sandbox.paths(self.lab_root, "t1")
 
     def tearDown(self):
@@ -451,7 +451,7 @@ class InstallPlugins(TempRoot):
             json.dumps({"enabledPlugins": {PLUGIN: True}, "permissions": PERMISSIONS})
         )
         self.status_file = self.p.results / "ts" / "statusline.json"
-        sandbox.build_config(self.lab_root, config.Test("t1", "sp", "simple", "m"), self.p, self.status_file)
+        sandbox.build_config(self.lab_root, config.Test("t1", "sp", "prompt-simple.md", "m"), self.p, self.status_file)
         self.log = self.p.base / "claude.log"
         environ = {k: v for k, v in os.environ.items() if not k.startswith("FAKE_CLAUDE_")}
         environ.update(PATH=f"{FAKES}{os.pathsep}{os.environ.get('PATH', '')}", FAKE_CLAUDE_LOG=str(self.log))
