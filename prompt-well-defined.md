@@ -1,36 +1,25 @@
 Create a simple "Hello GitHub Pages" app using the Git repository located in the `xyz` directory.
 
-The repository is new and empty. The goal is to create and publish a minimal static website that is actually accessible through GitHub Pages.
-
 Requirements:
-- Create an `index.html` in the repository root.
-- Use plain HTML and CSS only.
-- Display the text "Hello GitHub Pages" prominently on the page.
-- Keep the design simple and clean.
-- Use relative paths for all local resources.
-- Do not introduce a framework, build system, package manager, or external dependencies.
+- Work only in the `xyz` repository; do not inspect unrelated directories.
+- First inspect only the repository state needed for this task: existing files, Git status, remote, and default branch.
+- Create the simplest suitable static site. Use a single `index.html` unless an existing repository structure makes another minimal approach necessary.
+- The rendered page must clearly display `Hello GitHub Pages`.
+- Keep the implementation minimal. Do not add a framework, package manager, build system, dependencies, tests, README, custom GitHub Actions workflow, or unrelated files/features.
+- Preserve existing repository content and unrelated changes.
 
-Publish the site using GitHub Pages:
-- Verify that the repository has a GitHub remote configured and that GitHub CLI authentication is available.
-- Use the repository's default branch as the publishing branch.
-- Commit the required files and push the branch to the GitHub remote.
-- Configure GitHub Pages to publish directly from the repository root of that branch.
-- Prefer branch-based GitHub Pages publishing; do not add a GitHub Actions workflow for this simple static site.
-- Set the repository's website in the About section to the GitHub Pages URL.
+Publish the site with GitHub Pages:
+- Use the repository's existing GitHub remote and default branch.
+- For this static site, configure GitHub Pages to publish from the root (`/`) of the default branch rather than adding a custom deployment workflow.
+- Commit and push the required changes.
+- Use the GitHub CLI/API where appropriate to configure GitHub Pages.
+- Determine the actual published Pages URL and set that URL as the repository's homepage/website in its GitHub About section.
 
-Before finishing, verify the result:
-- Check that all referenced files and paths are valid.
-- Review `git diff` and `git status` before committing.
-- Confirm that the push succeeded.
-- Confirm through GitHub that GitHub Pages is enabled and that the deployment completed successfully.
-- Retrieve the resulting GitHub Pages URL.
-- Verify that the published URL is reachable and displays "Hello GitHub Pages".
-- Confirm through GitHub that the repository's website field shows the GitHub Pages URL.
+Before finishing, verify that:
+- the GitHub Pages deployment succeeded,
+- the published URL serves the site, and
+- the repository homepage URL points to that published site.
 
-If no GitHub remote is configured or GitHub authentication is unavailable, do not guess or create unrelated resources. Stop and clearly report what is missing.
+If GitHub authentication, permissions, or a GitHub remote required to complete the task are unavailable, stop and report the exact blocker rather than creating an alternative repository or deployment mechanism.
 
-When finished, report:
-- the files you created,
-- the commit and branch that were published,
-- the GitHub Pages URL and that it is linked in the About section,
-- and how you verified that the deployed page works.
+Keep the final response concise: report the files changed, the published site URL, and whether the GitHub About website link was updated successfully.
