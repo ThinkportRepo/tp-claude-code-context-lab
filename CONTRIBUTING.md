@@ -1,9 +1,7 @@
 # Contributing
 
 Issues, questions and suggestions are welcome. We don't accept code
-contributions (pull requests) while the license is open (see
-[LICENSE](LICENSE) and the open decision in
-[docs/decisions.md](docs/decisions.md#open-decisions)).
+contributions (pull requests) at this time.
 
 ## Conventions for maintainers
 
@@ -21,6 +19,7 @@ contributions (pull requests) while the license is open (see
 
   ```
   Assisted-by: Claude Opus 5.5 (code generation)
+  Assisted-by: Codex GPT-6.1 Sol (code review)
   ```
 
   Do not use `Co-Authored-By` for AI.
