@@ -52,26 +52,28 @@ Four profiles × two prompts = eight tests, plus one model test, defined
 in `lab/matrix.conf`:
 
 ```
-# id     profile      prompt        [model]           [effort]
-test1    clean        simple
-test2    clean        well-defined
-test3    superpowers  simple
-test4    superpowers  well-defined
-test5    dev-stack    simple
-test6    dev-stack    well-defined
-test7    dev-messy    simple
-test8    dev-messy    well-defined
-test9    clean        simple        claude-sonnet-5   medium
+# id     profile      [prompt]                [model]           [effort]
+test1    clean        prompt-simple.md
+test2    clean        prompt-well-defined.md
+test3    superpowers  prompt-simple.md
+test4    superpowers  prompt-well-defined.md
+test5    dev-stack    prompt-simple.md
+test6    dev-stack    prompt-well-defined.md
+test7    dev-messy    prompt-simple.md
+test8    dev-messy    prompt-well-defined.md
+test9    clean        prompt-simple.md        claude-sonnet-5   medium
 ```
 
-The columns are `id profile prompt [model] [effort]`. A model column of
-`-` means the default model (see [Model](#model)), so a test can set an
-effort without naming a model. `effort` is `low`, `medium`, `high`,
-`xhigh` or `max`; a test with an effort passes `--effort <level>` to
-every `claude` call that reaches the model (headless turns, follow-ups,
-the interactive session), a test without one passes no `--effort`. The
-usage-limit probe never passes one. Errors in the file name the file and
-line.
+The columns are `id profile [prompt] [model] [effort]`
+([matrix.md](matrix.md) has examples). The prompt is a file path relative
+to the lab root; it must be a file inside the lab root. A prompt column
+of `-`, or none, means `prompt-simple.md`. A model column of `-` means the
+default model (see [Model](#model)), so a test can set an effort without
+naming a model. `effort` is `low`, `medium`, `high`, `xhigh` or `max`; a
+test with an effort passes `--effort <level>` to every `claude` call that
+reaches the model (headless turns, follow-ups, the interactive session),
+a test without one passes no `--effort`. The usage-limit probe never
+passes one. Errors in the file name the file and line.
 
 Test ids must match `test[A-Za-z0-9_-]*`, profile names `[a-z0-9][a-z0-9-]*`.
 This keeps every repository named `lab-test…`, which teardown can find, and
@@ -82,10 +84,14 @@ fresh state.
 
 ### Prompts
 
-| Prompt | File | Content |
-|---|---|---|
-| `simple` | `lab/prompts/simple.txt` | One sentence: create the app in the `xyz` directory, publish it with GitHub Pages, link it in the About section. |
-| `well-defined` | `well-defined-prompt` | The same task with explicit requirements, branch-based Pages publishing, the About link, and verification steps. |
+| File | Content |
+|---|---|
+| `prompt-simple.md` | One sentence: create the app in the `xyz` directory, publish it with GitHub Pages, link it in the About section. |
+| `prompt-well-defined.md` | The same task with explicit requirements, branch-based Pages publishing, the About link, and verification steps. |
+
+`results.csv`, the report and the run output show the prompt as the path
+written in `matrix.conf`. Rows recorded before the prompt became a file
+path show `simple` or `well-defined` and form groups of their own.
 
 Both prompts name the directory `xyz`. Each test therefore places its
 repository at `sandbox/<test>/xyz` and starts Claude in `sandbox/<test>`,
@@ -324,17 +330,16 @@ The code calls the directory that holds `lab.py` the **lab root**
 ```
 lab.py                       # entry point: tokens | setup | run | session | report | teardown
 lab/
-├── matrix.conf              # one line per test: <id> <profile> <prompt> [model] [effort]
+├── matrix.conf              # one line per test: <id> <profile> [prompt] [model] [effort]
 ├── profiles/<name>/
 │   ├── settings.json        # plugins and permission lists
 │   └── mcp.json             # optional: user-scope MCP servers (dev-messy only)
 ├── prompts/
-│   ├── simple.txt
 │   └── followups.txt        # fixed answers for automated runs
 ├── labkit/                  # Python package
 │   ├── env.py               # .env loading and writing (mode 600)
 │   ├── preflight.py         # checks before every command except tokens and report
-│   ├── config.py            # matrix, profiles, prompts, follow-ups
+│   ├── config.py            # matrix, profiles, prompt files, follow-ups
 │   ├── tokens.py            # `tokens` commands
 │   ├── github_auth.py       # PAT form URL, permission checklist, browser
 │   ├── github.py            # gh/git wrapper: repos, Pages, goal check, S5 check
@@ -347,7 +352,8 @@ lab/
 │   ├── statusline.py        # live context/token display
 │   └── teardown.py          # remove repos, sandbox, secrets
 └── tests/                   # unittest, transcript fixtures, a fake `claude`
-well-defined-prompt          # the well-defined prompt
+prompt-simple.md             # the default prompt: one sentence
+prompt-well-defined.md       # the same task with explicit requirements
 .env.example                 # documents every variable, no values
 .env                         # gitignored; created by `lab.py tokens`
 results.csv                  # gitignored; one row per run
