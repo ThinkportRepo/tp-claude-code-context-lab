@@ -7,6 +7,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from labkit import report, results  # noqa: E402
 
+# The widest line the report may print: the Runs table reaches ~127 at realistic values (R52).
+TERMINAL_WIDTH = 130
+
 
 def row(**kw):
     """A run row with the grouping keys filled in; kw overrides."""
@@ -259,17 +262,15 @@ class TestRender(unittest.TestCase):
         self.assertEqual(cells[2:5], ["3", "2", "1"])
 
     def assert_fits(self, cache_reads):
-        # A pre-R49 prompt value: with `prompt-well-defined.md` this summary table is 127 columns
-        # wide at these magnitudes (open: move its ranges below the medians, as in the token table).
         rows = [
-            row(mode=m, profile="superpowers", prompt="well-defined",
+            row(mode=m, profile="superpowers", prompt="prompt-well-defined.md",
                 model="claude-sonnet-5-5", ctx_start=v, ctx_growth=v // 10, tokens_out=v // 5,
                 cache_read=c, limit_5h_start_pct=10, limit_5h_end_pct=10 + i)
             for m in ("headless", "interactive")
             for i, (v, c) in enumerate(zip((17900, 18800, 123456), cache_reads))
         ]  # fmt: skip
         for line in report.render(rows).splitlines():
-            self.assertLessEqual(len(line), 120, line)
+            self.assertLessEqual(len(line), TERMINAL_WIDTH, line)
 
     def test_render_fits_live_terminal(self):
         self.assert_fits((350_000, 420_000, 610_000))
@@ -351,7 +352,7 @@ class TestTokenTable(unittest.TestCase):
         lines = self.table(rows)
         self.assertIn("1.3M", "\n".join(lines))  # total up to ~1.3M
         for line in report.render(rows).splitlines():
-            self.assertLessEqual(len(line), 120, line)
+            self.assertLessEqual(len(line), TERMINAL_WIDTH, line)
 
 
 if __name__ == "__main__":

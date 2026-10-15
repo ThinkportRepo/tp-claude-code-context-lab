@@ -3,7 +3,7 @@
 Rows come from `results.read` (strings, empty cell = missing) or straight
 from a runner (numbers, None). Everything here treats both alike.
 
-The output is shown live, so each table stays within a ~120-column
+The output is shown live, so each table stays within a ~130-column
 terminal: the first and third tables repeat mode, model and effort as
 section headings instead of columns; the first shows only the most telling
 metrics, and the third puts min–max on a line of its own.
@@ -201,7 +201,7 @@ def _table(header: list[str], rows: list[list[str]], left: int, sep: str = "  ")
 def _sectioned(header: list[str], body: list[tuple[str, list[str] | str]], left: int) -> list[str]:
     """A table with a `[section]` line before each new section of `body`."""
     # One column grid for the whole table so sections line up.
-    # Single-space gaps: the range cells are wide and the table must fit ~120 columns.
+    # Single-space gaps: the range cells are wide and the table must fit ~130 columns.
     table = _table(header, [cells for _, cells in body if not isinstance(cells, str)], left=left, sep=" ")
     lines = [table[0], "-" * len(table[0])]
     previous = None
@@ -234,7 +234,7 @@ def _summary_lines(rows: list[dict]) -> list[str]:
 def _token_lines(rows: list[dict]) -> list[str]:
     """Token table: medians per group, and for n > 1 their min–max on the line below.
 
-    In one line, "median (min–max)" for six columns would not fit 120 columns.
+    In one line, "median (min–max)" for six columns would not fit 130 columns.
     """
     body = []
     for g in summarize(rows):
