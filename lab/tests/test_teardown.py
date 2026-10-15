@@ -558,11 +558,13 @@ class Cli(unittest.TestCase):
              mock.patch.object(self.cli.preflight, "chrome_installed", return_value=chrome) as chrome_mock, \
              mock.patch.object(self.cli.limits, "probe", return_value=probe) as probe_mock:
             if matrix is not None:
-                matrix_file = self.lab_root / "matrix.conf"
+                matrix_file = self.lab_root / "lab" / "matrix.conf"
+                matrix_file.parent.mkdir()
                 matrix_file.write_text(matrix)
                 self.cli.MATRIX_FILE = matrix_file
-                profiles = self.lab_root / "profiles"
-                profiles.symlink_to(REPO / "lab" / "profiles")
+                (self.lab_root / "lab" / "profiles").symlink_to(REPO / "lab" / "profiles")
+                for name in ("prompt-simple.md", "prompt-well-defined.md"):
+                    (self.lab_root / name).write_text((REPO / name).read_text())
             result = self.call(self.cli.run_setup, self.cfg)
         return result, calls, probe_mock, chrome_mock
 
@@ -597,14 +599,14 @@ class Cli(unittest.TestCase):
         self.assertEqual(err, "")
 
     def test_setup_does_not_check_chrome_without_dev_stack(self):
-        (code, _, err), calls, _, chrome = self.setup_cmd(chrome=False, matrix="test1 clean simple\n")
+        (code, _, err), calls, _, chrome = self.setup_cmd(chrome=False, matrix="test1 clean\n")
         self.assertEqual(code, 0)
         self.assertEqual(calls, [])
         chrome.assert_not_called()
         self.assertEqual(err, "")
 
     def test_setup_warns_without_chrome_for_dev_messy(self):
-        (code, _, err), calls, _, chrome = self.setup_cmd(chrome=False, matrix="test1 dev-messy simple\n")
+        (code, _, err), calls, _, chrome = self.setup_cmd(chrome=False, matrix="test1 dev-messy\n")
         self.assertEqual(code, 0)
         self.assertEqual(calls, [])
         chrome.assert_called_once()
@@ -618,12 +620,14 @@ class Cli(unittest.TestCase):
         self.assertNotIn("expected to", err)
 
     def test_setup_prints_the_effort_of_a_test(self):
-        matrix = "test1 clean simple claude-sonnet-5 medium\ntest2 clean simple\n"
+        matrix = "test1 clean prompt-well-defined.md claude-sonnet-5 medium\ntest2 clean\n"
         (code, out, _), _, _, _ = self.setup_cmd(matrix=matrix)
         self.assertEqual(code, 0)
         line1, line2 = (next(l for l in out.splitlines() if l.split()[:1] == [t]) for t in ("test1", "test2"))
-        self.assertEqual(line1.split()[3:], ["claude-sonnet-5", "medium"])
-        self.assertEqual(line2.split()[3:], [config.DEFAULT_MODEL])
+        self.assertEqual(line1.split()[2:], ["prompt-well-defined.md", "claude-sonnet-5", "medium"])
+        self.assertEqual(line2.split()[2:], ["prompt-simple.md", config.DEFAULT_MODEL])
+        # The model column lines up although the prompt file names differ in length.
+        self.assertEqual(line1.index("claude-sonnet-5"), line2.index(config.DEFAULT_MODEL))
 
     def test_setup_prints_the_limit_as_unknown_when_the_probe_fails(self):
         (_, out, _), _, _, _ = self.setup_cmd(probe=None)

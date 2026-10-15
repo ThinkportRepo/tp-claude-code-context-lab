@@ -248,9 +248,10 @@ def run_setup(cfg: dict[str, str]) -> int:
             sandbox.paths(LAB_ROOT, test.id).base.mkdir(parents=True, exist_ok=True)
         print(f"Sandbox: {SANDBOX}")
         width = max(len(t.id) for t in tests)
+        prompt_width = max(len(t.prompt) for t in tests)
         for t in tests:
             effort = f"  {t.effort}" if t.effort else ""
-            print(f"  {t.id:<{width}}  {t.profile:<12}  {t.prompt:<12}  {t.model}{effort}")
+            print(f"  {t.id:<{width}}  {t.profile:<12}  {t.prompt:<{prompt_width}}  {t.model}{effort}")
         print(limits.limit_line(limits.probe(LAB_ROOT, cfg)))
     except KeyboardInterrupt:
         print("\ninterrupted", file=sys.stderr)

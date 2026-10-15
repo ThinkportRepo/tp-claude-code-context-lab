@@ -12,7 +12,7 @@ def row(**kw):
     """A run row with the grouping keys filled in; kw overrides."""
     base = {
         "mode": "headless", "model": "m1", "profile": "clean",
-        "prompt": "simple", "status": "ok",
+        "prompt": "prompt-simple.md", "status": "ok",
     }  # fmt: skip
     base.update(kw)
     return base
@@ -134,7 +134,7 @@ class TestSummarize(unittest.TestCase):
         groups = report.summarize(rows)
         self.assertEqual(len(groups), 3)
         self.assertEqual(group(rows, mode="interactive")["ctx_start"]["median"], 31115)
-        self.assertEqual(group(rows, mode="headless", prompt="simple")["ctx_start"]["median"], 18758)
+        self.assertEqual(group(rows, mode="headless", prompt="prompt-simple.md")["ctx_start"]["median"], 18758)
 
     def test_groups_sorted_by_mode_model_profile_prompt(self):
         rows = [
@@ -143,7 +143,7 @@ class TestSummarize(unittest.TestCase):
         ]  # fmt: skip
         keys = [(g["mode"], g["model"], g["profile"], g["prompt"]) for g in report.summarize(rows)]
         self.assertEqual(keys, sorted(keys))
-        self.assertEqual(keys[0], ("headless", "m1", "clean", "simple"))
+        self.assertEqual(keys[0], ("headless", "m1", "clean", "prompt-simple.md"))
 
 
 class TestEffort(unittest.TestCase):
@@ -259,6 +259,8 @@ class TestRender(unittest.TestCase):
         self.assertEqual(cells[2:5], ["3", "2", "1"])
 
     def assert_fits(self, cache_reads):
+        # A pre-R49 prompt value: with `prompt-well-defined.md` this summary table is 127 columns
+        # wide at these magnitudes (open: move its ranges below the medians, as in the token table).
         rows = [
             row(mode=m, profile="superpowers", prompt="well-defined",
                 model="claude-sonnet-5-5", ctx_start=v, ctx_growth=v // 10, tokens_out=v // 5,
@@ -313,7 +315,7 @@ class TestTokenTable(unittest.TestCase):
         self.assertEqual(positions, sorted(positions), header)
         self.assertIn("[headless / m1]", lines)
         cells = next(l for l in lines if l.startswith("clean")).split()
-        self.assertEqual(cells, ["clean", "simple", "1", "14", "31.2k", "49.1k", "880", "81.2k", "$0.009"])
+        self.assertEqual(cells, ["clean", "prompt-simple.md", "1", "14", "31.2k", "49.1k", "880", "81.2k", "$0.009"])
 
     def test_api_equiv_keeps_three_decimals(self):
         cells = next(l for l in self.table([row(**USAGE, api_equiv_usd=0.0004)]) if l.startswith("clean"))
@@ -340,7 +342,7 @@ class TestTokenTable(unittest.TestCase):
     def test_fits_live_terminal_with_realistic_magnitudes(self):
         # From dev runs: Haiku sessions with 350k–730k cache reads; plus a 1.2M one.
         rows = [
-            row(mode=m, profile="superpowers", prompt="well-defined", model="claude-sonnet-5-5",
+            row(mode=m, profile="superpowers", prompt="prompt-well-defined.md", model="claude-sonnet-5-5",
                 tokens_in=i, cache_write=w, cache_read=r, tokens_out=o, api_equiv_usd=c)
             for m in ("headless", "interactive")
             for i, w, r, o, c in ((28, 12604, 401_405, 4971, 0.009), (40, 16493, 725_552, 7126, 0.0117),

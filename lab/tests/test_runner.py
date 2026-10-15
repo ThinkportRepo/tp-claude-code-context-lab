@@ -134,9 +134,9 @@ class FakeClaude(unittest.TestCase):
         )
         prompts = self.lab_root / "lab" / "prompts"
         prompts.mkdir()
-        (prompts / "simple.txt").write_text(PROMPT)
+        (self.lab_root / "prompt-simple.md").write_text(PROMPT)
         (prompts / "followups.txt").write_text("# comment\n" + "\n".join(FOLLOWUPS) + "\n")
-        self.test = config.Test("test1", "clean", "simple", MODEL)
+        self.test = config.Test("test1", "clean", "prompt-simple.md", MODEL)
         self.log = self.tmp / "claude.log"
         environ = {k: v for k, v in os.environ.items() if not k.startswith("FAKE_CLAUDE_")}
         environ.update(
@@ -249,7 +249,7 @@ class HeadlessRun(FakeClaude):
 
     def test_effort_reaches_every_turn_but_not_the_probe(self):
         limits.probe(self.lab_root, CFG)
-        test = config.Test("test1", "clean", "simple", MODEL, "medium")
+        test = config.Test("test1", "clean", "prompt-simple.md", MODEL, "medium")
         row = self.run_headless(FakeGitHub(goal_ok=[False, False]), test=test)
         probe, *turns = self.p_calls()
         self.assertNotIn("--effort", probe["argv"])
@@ -272,7 +272,7 @@ class HeadlessRun(FakeClaude):
         self.assertEqual(row["model"], MODEL)
         self.assertIsNone(row["effort"])
         self.assertEqual(row["mcp_connected"], "")  # the fixture stream has no init event
-        self.assertEqual((row["test"], row["profile"], row["prompt"]), ("test1", "clean", "simple"))
+        self.assertEqual((row["test"], row["profile"], row["prompt"]), ("test1", "clean", "prompt-simple.md"))
         self.assertEqual(set(row), set(results.FIELDS))
         (csv_row,) = self.csv_rows()
         self.assertEqual(csv_row["status"], "ok")
@@ -408,7 +408,7 @@ class HeadlessRun(FakeClaude):
         self.assertNotIn("claude exited", self.out.getvalue() + self.err.getvalue())
 
     def test_plugins_installed_before_first_turn(self):
-        test = config.Test("test3", "superpowers", "simple", MODEL)
+        test = config.Test("test3", "superpowers", "prompt-simple.md", MODEL)
         row = self.run_headless(FakeGitHub(goal_ok=[True]), test)
         marketplace, install, turn = self.calls()
         self.assertEqual(marketplace["argv"][:3], ["plugin", "marketplace", "add"])
@@ -428,7 +428,7 @@ class HeadlessRun(FakeClaude):
 
     def test_install_failure_recorded(self):
         os.environ["FAKE_CLAUDE_PLUGIN_FAIL"] = "1"
-        test = config.Test("test3", "superpowers", "simple", MODEL)
+        test = config.Test("test3", "superpowers", "prompt-simple.md", MODEL)
         with self.assertRaises(RuntimeError):
             self.run_headless(FakeGitHub(goal_ok=[True]), test)
         (csv_row,) = self.csv_rows()
@@ -437,7 +437,7 @@ class HeadlessRun(FakeClaude):
 
     def test_install_time_not_in_run_budget(self):
         os.environ["FAKE_CLAUDE_PLUGIN_SLEEP"] = "1.5"
-        test = config.Test("test3", "superpowers", "simple", MODEL)
+        test = config.Test("test3", "superpowers", "prompt-simple.md", MODEL)
         row = self.run_headless(FakeGitHub(goal_ok=[True]), test, timeout_s=1)
         self.assertEqual(row["status"], "ok")
         self.assertLessEqual(row["duration_s"], 1)
@@ -607,7 +607,7 @@ class Interactive(FakeClaude):
             self.assertFalse((work / ".playwright-mcp").exists())
 
     def test_session_argv_carries_the_effort(self):
-        test = config.Test("test1", "clean", "simple", MODEL, "high")
+        test = config.Test("test1", "clean", "prompt-simple.md", MODEL, "high")
         row = self.run_interactive(FakeGitHub(goal_ok=[True]), test=test)
         (session,) = self.sessions()
         self.assertEqual(
@@ -630,7 +630,7 @@ class Interactive(FakeClaude):
         self.assertIn(str(Path("sandbox") / "test1" / "config"), self.out.getvalue())
 
     def test_interactive_installs_profile_plugins(self):
-        test = config.Test("test3", "superpowers", "simple", MODEL)
+        test = config.Test("test3", "superpowers", "prompt-simple.md", MODEL)
         row = self.run_interactive(FakeGitHub(goal_ok=[True]), test)
         argvs = [c["argv"] for c in self.calls()]
         self.assertEqual(argvs[0][:3], ["plugin", "marketplace", "add"])
