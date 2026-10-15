@@ -18,7 +18,10 @@ id  profile  [prompt]  [model]  [effort]
   - `dev-messy`: twelve plugins and nine more MCP servers, heavily overlapping.
 - `prompt`: a file path relative to the lab root (the directory with
   `lab.py`). Without the column, or with `-`, the test uses
-  `prompt-simple.md`.
+  `prompt-simple.md`. A new prompt file must ask for the same task: the app
+  in the `xyz` directory, published with GitHub Pages, showing "Hello GitHub
+  Pages", linked in the About section. The goal check tests exactly that
+  (see [design.md](design.md#the-task)).
 - `model`: a model ID. Without the column, or with `-`, the test uses
   `LAB_MODEL` from `.env`, else `claude-haiku-5-5`.
 - `effort`: `low`, `medium`, `high`, `xhigh` or `max`, passed to Claude as

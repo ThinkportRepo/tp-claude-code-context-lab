@@ -18,7 +18,7 @@ guesses.
 
 > [!WARNING]
 > The lab creates **public** test repositories, so use an organization
-> that holds nothing else. Its tokens live in `.env`; revoke them with
+> that holds nothing else. The lab's tokens live in `.env`; revoke them with
 > `python3 lab.py teardown --secrets` when you are done.
 
 Run these from the repository root:
