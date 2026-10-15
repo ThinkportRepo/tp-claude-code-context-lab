@@ -78,22 +78,9 @@ Before you start:
 
 ### Configure the test matrix
 
-`lab/matrix.conf` lists one test per line, with the columns
-`id profile prompt [model] [effort]`. A profile is a directory in
-`lab/profiles/`; the prompt is `simple` (`lab/prompts/simple.txt`) or
-`well-defined` (`well-defined-prompt`). Without a model, or with `-` in
-the model column, a test uses `LAB_MODEL` from `.env`, else
-`claude-haiku-5-5`. `effort` is `low`, `medium`, `high`, `xhigh` or `max`;
-without it the lab passes no `--effort`. `REPEAT=n` in `.env` (or
-`run --repeat n`) runs each test n times.
-
-Example; the third line sets an effort for the default model:
-
-```
-test1    clean        simple
-test9    clean        simple        claude-sonnet-5   medium
-test10   dev-messy    simple        -                 high
-```
+`lab/matrix.conf` lists one test per line: an id, a profile, and
+optionally a prompt file, a model and an effort level.
+[docs/matrix.md](docs/matrix.md) describes the columns and has examples.
 
 The profiles:
 
@@ -109,6 +96,7 @@ The profiles:
 
 - [docs/design.md](docs/design.md): what the lab measures and how,
   including the measurements
+- [docs/matrix.md](docs/matrix.md): the test matrix, with examples
 - [docs/decisions.md](docs/decisions.md): the decisions, with reasons
 - [docs/implementation-history.md](docs/implementation-history.md): how
   the lab was built
