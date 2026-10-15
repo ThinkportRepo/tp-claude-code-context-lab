@@ -10,7 +10,12 @@ id  profile  [prompt]  [model]  [effort]
 - `id`: the test name. It must start with `test`, followed by letters,
   digits, `_` or `-`. The test works in `sandbox/<id>` and uses the GitHub
   repository `lab-<id>`.
-- `profile`: a directory in `lab/profiles/`.
+- `profile`: a directory in `lab/profiles/`; [design.md](design.md#profiles)
+  lists their plugins.
+  - `clean`: no plugins, the baseline.
+  - `superpowers`: the `superpowers` skill plugin.
+  - `dev-stack`: a typical developer setup: four plugins, two with MCP servers.
+  - `dev-messy`: twelve plugins and nine more MCP servers, heavily overlapping.
 - `prompt`: a file path relative to the lab root (the directory with
   `lab.py`). Without the column, or with `-`, the test uses
   `prompt-simple.md`.

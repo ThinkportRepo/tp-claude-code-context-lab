@@ -13,7 +13,7 @@ Each entry is marked:
 The lab was built by AI coding agents under a coordinating agent, with a
 person deciding direction and running the steps that need a browser or the
 subscription (see [implementation-history.md](implementation-history.md)).
-The rulings R1–R36, R38–R50 and R52 are numbered in the order they were made.
+The rulings R1–R36 and R38–R52 are numbered in the order they were made.
 R37 was a ruling on the review process and is not listed. Decisions the
 user made without a ruling number follow after them.
 
@@ -667,6 +667,20 @@ the simple prompt into a file like the well-defined one, with a
 - **Why:** an example of a model comparison should show the current
   models.
 - **Cost if wrong:** model IDs in an example.
+
+### R51 — No example output in the README
+
+**Implementation decision** (2026-10-15; applies the user decision
+[README and repository boilerplate](#readme-and-repository-boilerplate)
+and the user's request for a short README).
+
+- **Decided:** the README follows common open-source practice: a short
+  description, requirements, a quick start, one matrix example and links.
+  It shows no example output and no measurements. Details it no longer
+  carries are in design.md and matrix.md.
+- **Why:** the user asked for README basics only. The measurements are in
+  design.md and are shown in the demo.
+- **Cost if wrong:** one section to add.
 
 ### R52 — The Runs table may be about 130 columns wide
 
