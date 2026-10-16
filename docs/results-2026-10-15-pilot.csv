@@ -1,0 +1,3 @@
+timestamp,test,mode,model,effort,profile,prompt,status,goal_ok,ctx_start,ctx_end,ctx_growth,tokens_in,tokens_out,cache_read,cache_write,sub_calls,sub_ctx_start_max,sub_ctx_growth_max,api_calls,turns,duration_s,limit_5h_start_pct,limit_5h_end_pct,api_equiv_usd,plugin_versions,mcp_connected
+20261015T165214Z,test-prompt-simple,headless,claude-haiku-5-5,low,clean,prompt-simple.md,ok,True,18937,24975,6038,28,3811,277047,12267,0,,,13,1,73,5,6,0.00713217,,
+20261015T165334Z,test-prompt-well-defined,headless,claude-haiku-5-5,low,clean,prompt-well-defined.md,ok,True,19457,28109,8652,32,4084,352589,15401,0,,,16,1,73,6,6,0.00865129,,

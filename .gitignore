@@ -60,6 +60,8 @@ override.tf.json
 sandbox/
 results.csv
 results-*.csv
+# Published measurement results live in docs/.
+!docs/results-*.csv
 
 # --- Local agent workspace ---
 .superpowers/

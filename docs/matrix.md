@@ -10,8 +10,8 @@ id  profile  [prompt]  [model]  [effort]
 - `id`: the test name. It must start with `test`, followed by letters,
   digits, `_` or `-`. The test works in `sandbox/<id>` and uses the GitHub
   repository `lab-<id>`.
-- `profile`: a directory in `lab/profiles/`; [design.md](design.md#profiles)
-  lists their plugins.
+- `profile`: a directory in `lab/profiles/`. Its `settings.json` lists the
+  plugins; `mcp.json`, if present, adds MCP servers.
   - `clean`: no plugins, the baseline.
   - `superpowers`: the `superpowers` skill plugin.
   - `dev-stack`: a typical developer setup: four plugins, two with MCP servers.
@@ -20,8 +20,7 @@ id  profile  [prompt]  [model]  [effort]
   `lab.py`). Without the column, or with `-`, the test uses
   `prompt-simple.md`. A new prompt file must ask for the same task: the app
   in the `xyz` directory, published with GitHub Pages, showing "Hello GitHub
-  Pages", linked in the About section. The goal check tests exactly that
-  (see [design.md](design.md#the-task)).
+  Pages", linked in the About section. The goal check tests exactly that.
 - `model`: a model ID. Without the column, or with `-`, the test uses
   `LAB_MODEL` from `.env`, else `claude-haiku-5-5`.
 - `effort`: `low`, `medium`, `high`, `xhigh` or `max`, passed to Claude as

@@ -92,13 +92,6 @@ test9    clean        prompt-simple.md        claude-sonnet-5   medium
 
 [docs/matrix.md](docs/matrix.md) describes the columns and has examples.
 
-## Documentation
-
-- [docs/design.md](docs/design.md): what the lab measures and how, with measurements
-- [docs/matrix.md](docs/matrix.md): the test matrix, with examples
-- [docs/decisions.md](docs/decisions.md): the decisions, with reasons
-- [docs/implementation-history.md](docs/implementation-history.md): how the lab was built
-
 ## Contributing and security
 
 Ask questions and report problems in the GitHub issues; see
