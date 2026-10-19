@@ -529,14 +529,18 @@ class GoalOk(TempDirCase):
         self.assertEqual(self.goal([self.live()], [], [self.URL], live=False), (True, 0))
         self.assertEqual(self.goal([self.live()], [], ["https://example.com/"], live=False), (False, 0))
 
-    def test_without_the_live_check_pages_must_still_be_deployed(self):
+    def test_without_the_live_check_a_building_site_is_decided_by_its_url(self):
+        # The Pages URL exists as soon as Pages is configured; the build does not matter.
         building = {"build_type": "legacy", "status": "building", "html_url": self.URL}
-        self.assertEqual(self.goal([building], [], [self.URL], live=False), (False, 0))
+        self.assertEqual(self.goal([building], [], [self.URL], live=False), (True, 0))
+        self.assertEqual(self.goal([building], [], [None], live=False), (False, 0))
+
+    def test_without_the_live_check_no_pages_is_not_ok(self):
+        self.assertEqual(self.goal([None], [], [], 180, live=False), (False, 0))
 
     def test_without_the_homepage_check_a_live_page_is_enough(self):
-        for homepage in (None, "https://example.com/"):
-            with self.subTest(homepage=homepage):
-                self.assertEqual(self.goal([self.live()], [self.page()], [], homepage=False), (True, 0))
+        # No homepage is scripted: reading it would raise StopIteration.
+        self.assertEqual(self.goal([self.live()], [self.page()], [], homepage=False), (True, 0))
         self.assertEqual(self.goal([self.live()], [self.http_404()], [], homepage=False), (False, 0))
 
     def test_host_is_compared_case_insensitively_but_the_path_is_not(self):

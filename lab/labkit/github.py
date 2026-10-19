@@ -170,15 +170,21 @@ class GitHub:
 
         The checks are those of the goal file (`config.Goal`): `live`, the
         Pages site answers 200, and `homepage`, the repo's About -> Website
-        field links to it. What the page shows is never checked. Both need a
-        deployed Pages site. Waiting is for the deployment only (no Pages
-        yet, still building, not answering yet). Once the site is deployed
-        (and, with `live`, answers) the answer is final: the link comes from
+        field links to it. What the page shows is never checked. Waiting is
+        for the deployment only (no Pages yet, still building, not answering
+        yet). Once the page answers the answer is final: the link comes from
         an agent action and does not appear on its own, so a missing or
-        different homepage is False right away.
+        different homepage is False right away. Without `live` there is
+        nothing to wait for: the Pages URL exists as soon as Pages is
+        configured, so the homepage is compared at once and wait_s is unused.
         """
+        if not live:
+            status = self.pages_status(name)
+            url = status.get("html_url") if status else None
+            return bool(url) and (_same_site(self.homepage(name), url) if homepage else True)
+
         def decide(url: str) -> bool | None:
-            if live and not _page_live(url):
+            if not _page_live(url):
                 return None  # not live yet: keep polling
             return _same_site(self.homepage(name), url) if homepage else True
 
