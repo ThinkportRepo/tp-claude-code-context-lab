@@ -619,6 +619,20 @@ class Cli(unittest.TestCase):
         self.assertIn("uses the installed Google Chrome (verified 2026-10-14)", err)
         self.assertNotIn("expected to", err)
 
+    def test_setup_prints_the_goal(self):
+        (code, out, _), _, _, _ = self.setup_cmd()
+        self.assertEqual(code, 0)
+        self.assertIn("Goal (prompt-goal.toml): pages_live (wait up to 180 s), homepage_is_pages", out)
+
+    def test_setup_stops_on_a_bad_goal_file(self):
+        bad = self.lab_root / "prompt-goal.toml"
+        bad.write_text('[[check]]\ntype = "app_works"\n')
+        self.cli.GOAL_FILE = bad
+        (code, _, err), _, probe, _ = self.setup_cmd()
+        self.assertEqual(code, 1)
+        self.assertIn("unknown type 'app_works'", err)
+        probe.assert_not_called()
+
     def test_setup_prints_the_effort_of_a_test(self):
         matrix = "test1 clean prompt-well-defined.md claude-sonnet-5 medium\ntest2 clean\n"
         (code, out, _), _, _, _ = self.setup_cmd(matrix=matrix)

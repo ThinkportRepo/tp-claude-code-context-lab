@@ -1,11 +1,12 @@
-"""Test matrix, prompts and profile settings.
+"""Test matrix, prompts, goal and profile settings.
 
-Reads the static configuration under `lab/` and the prompt files in the lab
-root. Makes no network calls and writes nothing.
+Reads the static configuration under `lab/` and the prompt and goal files
+in the lab root. Makes no network calls and writes nothing.
 """
 
 import json
 import re
+import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,11 @@ EFFORTS = ("low", "medium", "high", "xhigh", "max")
 DEFAULT_PROMPT = "prompt-simple.md"
 # In the prompt or model column: use the default (to set a later column alone).
 DEFAULT_MARK = "-"
+# The goal of every run, relative to the lab root.
+GOAL_FILE = "prompt-goal.toml"
+# Check type -> the keys it takes besides `type`. The types are fixed here,
+# not shell commands in the file: a check runs with the lab's GH_TOKEN in reach.
+GOAL_CHECKS = {"pages_live": {"wait_s"}, "homepage_is_pages": set()}
 
 # A test id names sandbox/<id>/, which every run wipes, and the repo lab-<id>,
 # which teardown only finds as `lab-test*`; so: no path parts, and a fixed prefix.
@@ -31,6 +37,16 @@ class Test:
     prompt: str
     model: str
     effort: str | None = None
+
+
+@dataclass(frozen=True)
+class Goal:
+    """The checks of the goal file; a run reaches its goal when all of them pass."""
+
+    pages_live: bool
+    homepage_is_pages: bool
+    # How long to wait for a GitHub Pages build before deciding; 0 without pages_live.
+    pages_wait_s: int = 0
 
 
 def _profile_dir(lab_dir: Path, profile: str) -> Path:
@@ -141,3 +157,55 @@ def profile_mcp_servers(lab_root: Path, profile: str) -> dict:
     if not isinstance(servers, dict) or not all(isinstance(v, dict) for v in servers.values()):
         raise ValueError(f'{path}: expected {{"mcpServers": {{"<name>": {{...}}, ...}}}}')
     return servers
+
+
+def load_goal(path: Path) -> Goal:
+    """Parse the goal file: one or more `[[check]]` tables, each with a `type` from GOAL_CHECKS.
+
+    `pages_live` (the Pages site answers 200) takes `wait_s`, an integer >= 0:
+    how long to wait for the Pages build. `homepage_is_pages` (the repo's
+    About -> Website field points to the Pages URL) takes nothing else.
+    Each type may appear once. Raises ValueError("<path>: ...") if the file
+    is missing or invalid; there is no default goal.
+    """
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        raise ValueError(f"{path}: not found; it sets the goal every run is checked against") from None
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"{path}: not valid TOML ({exc})") from None
+    for key in data:
+        if key != "check":
+            raise ValueError(f"{path}: unknown key {key!r}; the file holds [[check]] tables only")
+    checks = data.get("check")
+    if not isinstance(checks, list) or not checks:
+        raise ValueError(f"{path}: expected at least one [[check]] table")
+    found: dict[str, dict] = {}
+    for n, check in enumerate(checks, start=1):
+        where = f"{path}: check {n}"
+        kind = check.get("type") if isinstance(check, dict) else None
+        if kind not in GOAL_CHECKS:
+            raise ValueError(f"{where}: unknown type {kind!r} (known: {', '.join(GOAL_CHECKS)})")
+        for key in check:
+            if key != "type" and key not in GOAL_CHECKS[kind]:
+                raise ValueError(f"{where}: unknown key {key!r} for type {kind!r}")
+        if kind in found:
+            raise ValueError(f"{where}: duplicate type {kind!r}")
+        if "wait_s" in GOAL_CHECKS[kind]:
+            wait_s = check.get("wait_s")
+            if isinstance(wait_s, bool) or not isinstance(wait_s, int) or wait_s < 0:
+                raise ValueError(f"{where}: {kind} needs wait_s, an integer of at least 0 (seconds)")
+        found[kind] = check
+    return Goal(
+        pages_live="pages_live" in found,
+        homepage_is_pages="homepage_is_pages" in found,
+        pages_wait_s=found["pages_live"]["wait_s"] if "pages_live" in found else 0,
+    )
+
+
+def describe_goal(goal: Goal) -> str:
+    """The goal's checks in one line, e.g. for `lab.py setup`."""
+    parts = [f"pages_live (wait up to {goal.pages_wait_s} s)"] if goal.pages_live else []
+    return ", ".join(parts + (["homepage_is_pages"] if goal.homepage_is_pages else []))

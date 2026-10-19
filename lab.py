@@ -39,6 +39,7 @@ from labkit import (  # noqa: E402
 
 ENV_FILE = LAB_ROOT / ".env"
 MATRIX_FILE = LAB_ROOT / "lab" / "matrix.conf"
+GOAL_FILE = LAB_ROOT / config.GOAL_FILE
 SANDBOX = LAB_ROOT / "sandbox"
 RUN_TIMEOUT_S = runner.RUN_TIMEOUT_S  # per-run timeout; a GitHub token must outlive it
 NEEDS_GITHUB = {"setup", "run", "session"}
@@ -141,6 +142,15 @@ def _load_tests(cfg: dict[str, str], selection: str) -> list[config.Test] | None
     return tests
 
 
+def _load_goal() -> config.Goal | None:
+    """The goal from GOAL_FILE; None after printing the error."""
+    try:
+        return config.load_goal(GOAL_FILE)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return None
+
+
 def _gate(cfg: dict[str, str]) -> tuple[bool, dict | None]:
     """Probe the usage limit and ask the gate; (may run, probe result)."""
     probe = limits.probe(LAB_ROOT, cfg)
@@ -164,7 +174,8 @@ def run_tests(cfg: dict[str, str], selection: str, repeat: int | None) -> int:
         except ValueError as exc:
             print(f"error: REPEAT: {exc}", file=sys.stderr)
             return 1
-    tests = _load_tests(cfg, selection)
+    goal = _load_goal()
+    tests = _load_tests(cfg, selection) if goal else None
     if tests is None:
         return 1
 
@@ -180,7 +191,7 @@ def run_tests(cfg: dict[str, str], selection: str, repeat: int | None) -> int:
                     skipped += 1
                     break
                 row = runner.run_headless(
-                    LAB_ROOT, test, cfg, gh,
+                    LAB_ROOT, test, cfg, gh, goal=goal,
                     limit_start=probe["five_hour_pct"] if probe else None,
                     timeout_s=RUN_TIMEOUT_S,
                 )  # fmt: skip
@@ -200,7 +211,8 @@ def run_session(cfg: dict[str, str], test_id: str, prompt: bool) -> int:
     if test_id == "all":
         print("error: session takes one test id, not all", file=sys.stderr)
         return 1
-    tests = _load_tests(cfg, test_id)
+    goal = _load_goal()
+    tests = _load_tests(cfg, test_id) if goal else None
     if tests is None:
         return 1
     (test,) = tests
@@ -211,7 +223,7 @@ def run_session(cfg: dict[str, str], test_id: str, prompt: bool) -> int:
             print(f"skipping {test.id}: the usage-limit gate said no")
             return 1
         row = runner.run_interactive(
-            LAB_ROOT, test, cfg, gh,
+            LAB_ROOT, test, cfg, gh, goal=goal,
             limit_start=probe["five_hour_pct"] if probe else None, prompt=prompt,
         )  # fmt: skip
     except KeyboardInterrupt:
@@ -226,8 +238,9 @@ def run_session(cfg: dict[str, str], test_id: str, prompt: bool) -> int:
 
 
 def run_setup(cfg: dict[str, str]) -> int:
-    """`lab.py setup`: check org access (and Chrome for MCP_PROFILES), create sandbox dirs, show the matrix."""
-    tests = _load_tests(cfg, "all")
+    """`lab.py setup`: check org access (and Chrome), create sandbox dirs, show the matrix and the goal."""
+    goal = _load_goal()
+    tests = _load_tests(cfg, "all") if goal else None
     if tests is None:
         return 1
     gh = github.GitHub(cfg["LAB_GH_ORG"], cfg["GH_TOKEN"], SANDBOX / ".gh")
@@ -252,6 +265,7 @@ def run_setup(cfg: dict[str, str]) -> int:
         for t in tests:
             effort = f"  {t.effort}" if t.effort else ""
             print(f"  {t.id:<{width}}  {t.profile:<12}  {t.prompt:<{prompt_width}}  {t.model}{effort}")
+        print(f"Goal ({config.GOAL_FILE}): {config.describe_goal(goal)}")
         print(limits.limit_line(limits.probe(LAB_ROOT, cfg)))
     except KeyboardInterrupt:
         print("\ninterrupted", file=sys.stderr)

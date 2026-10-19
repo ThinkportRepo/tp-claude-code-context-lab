@@ -165,20 +165,22 @@ class GitHub:
             name, wait_s, lambda url: True if _page_shows(url, text) else None
         )
 
-    def goal_ok(self, name: str, wait_s: int) -> bool:
+    def goal_ok(self, name: str, wait_s: int, *, live: bool, homepage: bool) -> bool:
         """Is the lab's goal met? Poll up to wait_s (every 10 s) only until the site is live.
 
-        The goal: the Pages site is published (answers 200), and the repo's
-        About -> Website field links to it. What the page shows is not part
-        of the goal. Waiting is for the deployment only (no Pages yet, still
-        building, not answering yet). Once the page answers the answer is
-        final: the link comes from an agent action and does not appear on its
-        own, so a missing or different homepage is False right away.
+        The checks are those of the goal file (`config.Goal`): `live`, the
+        Pages site answers 200, and `homepage`, the repo's About -> Website
+        field links to it. What the page shows is never checked. Both need a
+        deployed Pages site. Waiting is for the deployment only (no Pages
+        yet, still building, not answering yet). Once the site is deployed
+        (and, with `live`, answers) the answer is final: the link comes from
+        an agent action and does not appear on its own, so a missing or
+        different homepage is False right away.
         """
         def decide(url: str) -> bool | None:
-            if not _page_live(url):
+            if live and not _page_live(url):
                 return None  # not live yet: keep polling
-            return _same_site(self.homepage(name), url)
+            return _same_site(self.homepage(name), url) if homepage else True
 
         return self._poll_pages(name, wait_s, decide)
 
