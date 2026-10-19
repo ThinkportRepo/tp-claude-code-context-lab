@@ -195,14 +195,6 @@ class Prompts(unittest.TestCase):
     def test_default_prompt_is_a_repo_file(self):
         self.assertTrue((REPO / config.DEFAULT_PROMPT).is_file())
 
-    def test_simple_prompt_text_is_pinned(self):
-        self.assertEqual(
-            config.prompt_text(REPO, "prompt-simple.md"),
-            'Create a simple "Hello GitHub Pages" app using the Git repository located in the `xyz` '
-            "directory. Publish it with GitHub Pages and link the site in the repository's About "
-            "section.\n",
-        )
-
     def test_prompt_text_rejects_missing_or_outside_files(self):
         for bad in ("poem.md", "simple", "lab", "../x.md"):
             with self.subTest(prompt=bad), self.assertRaises(ValueError):
@@ -213,11 +205,6 @@ class Prompts(unittest.TestCase):
             path = Path(d) / "followups.txt"
             path.write_text("# comment\n\nfirst\n  # indented comment\nsecond  \n")
             self.assertEqual(config.load_followups(path), ["first", "second"])
-
-    def test_repo_followups(self):
-        lines = config.load_followups(REPO / "lab" / "prompts" / "followups.txt")
-        self.assertEqual(len(lines), 2)
-        self.assertTrue(lines[0].startswith("Go with your recommendation"))
 
 
 class Goal(unittest.TestCase):
@@ -295,10 +282,9 @@ class Goal(unittest.TestCase):
             "check 2", "duplicate",
         )
 
-    def test_repo_goal_file_loads(self):
-        goal = config.load_goal(REPO / config.GOAL_FILE)
-        self.assertTrue(goal.pages_live and goal.homepage_is_pages)
-        self.assertEqual(goal.pages_wait_s, 180)
+    def test_repo_goal_file_is_valid(self):
+        # Only that it loads: which checks the scenario uses is up to the file.
+        config.load_goal(REPO / config.GOAL_FILE)
 
     def test_describe(self):
         both = config.Goal(pages_live=True, homepage_is_pages=True, pages_wait_s=180)

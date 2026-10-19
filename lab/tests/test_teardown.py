@@ -594,9 +594,12 @@ class Cli(unittest.TestCase):
         chrome.assert_not_called()
 
     def test_setup_prints_the_goal(self):
+        goal = self.lab_root / "prompt-goal.toml"
+        goal.write_text('[[check]]\ntype = "pages_live"\nwait_s = 30\n')
+        self.cli.GOAL_FILE = goal
         (code, out, _), _, _, _ = self.setup_cmd()
         self.assertEqual(code, 0)
-        self.assertIn("Goal (prompt-goal.toml): pages_live (wait up to 180 s), homepage_is_pages", out)
+        self.assertIn("Goal (prompt-goal.toml): pages_live (wait up to 30 s)", out)
 
     def test_setup_stops_on_a_bad_goal_file(self):
         bad = self.lab_root / "prompt-goal.toml"
