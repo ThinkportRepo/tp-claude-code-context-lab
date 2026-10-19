@@ -1,8 +1,8 @@
 # Prompts and goal
 
-A test scenario consists of three kinds of files: the prompts Claude gets,
-the follow-ups the runner sends while the goal is not reached, and the
-goal that decides whether a run reached it.
+A test scenario consists of the prompts Claude gets and the goal that
+decides whether a run reached it. The follow-ups the runner sends while
+the goal is not reached are the same for every scenario.
 
 ## Prompts
 
@@ -20,8 +20,9 @@ for what `prompt-goal.toml` checks.
 lines starting with `#` are skipped. In a headless run the runner checks
 the goal after each turn. While the goal is not reached, it resumes the
 session with the next line, until the lines run out. The follow-ups are
-the same for every profile, model and effort, and their turns count in
-the measured tokens. A `session` sends no follow-ups.
+the same for every profile, model, effort and scenario, so they must not
+refer to a specific task or goal; their turns count in the measured
+tokens. A `session` sends no follow-ups.
 
 ## Goal
 

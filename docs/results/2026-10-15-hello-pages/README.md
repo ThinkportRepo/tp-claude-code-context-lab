@@ -10,7 +10,8 @@
 Raw data: [results.csv](results.csv), 72 runs; the pilot runs before
 them: [results-pilot.csv](results-pilot.csv). The prompts used:
 [prompt-simple.md](prompt-simple.md),
-[prompt-well-defined.md](prompt-well-defined.md). The goal predates
+[prompt-well-defined.md](prompt-well-defined.md); the follow-ups:
+[followups.txt](followups.txt). The goal predates
 `prompt-goal.toml` and is described under Setup.
 
 ## Setup
@@ -19,7 +20,7 @@ them: [results-pilot.csv](results-pilot.csv). The prompts used:
   Pages and set the About link. Goal reached = the site shows "Hello
   GitHub Pages" and the About link points to it.
 - If the goal is not met after the prompt, the runner resumes the session
-  with up to two follow-up prompts (`lab/prompts/followups.txt`). All
+  with up to two follow-up prompts ([followups.txt](followups.txt)). All
   values include these turns. 12 runs used them: the 8 failures, the
   other 2 Sonnet runs with the simple prompt, and 2 Haiku runs.
 - Matrix: the four examples in [matrix.md](../../matrix.md), three runs per

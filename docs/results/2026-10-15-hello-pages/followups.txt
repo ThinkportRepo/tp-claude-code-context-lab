@@ -1,0 +1,3 @@
+# One line per follow-up turn in automated runs; the same for every profile.
+Go with your recommendation for every open question and continue without asking.
+Continue until the site is published on GitHub Pages and verified, as the task describes.
