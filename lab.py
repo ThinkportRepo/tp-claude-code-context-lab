@@ -45,8 +45,6 @@ NEEDS_GITHUB = {"setup", "run", "session"}
 # Profiles with MCP servers that npx starts and that drive Google Chrome.
 # A new profile with MCP servers belongs here, so its runs get both checks.
 MCP_PROFILES = {"dev-stack", "dev-messy"}
-# Below this much of the 5-hour limit left, a run needs an explicit yes (LAB_LIMIT_MIN_PCT).
-LIMIT_MIN_PCT = 10
 # teardown has to work with what is left: no Claude token (it may be gone
 # already), no npx, and an expired GitHub token only skips the repo part.
 TEARDOWN = "teardown"
@@ -75,7 +73,8 @@ def run_timeout_s(cfg: dict[str, str]) -> int:
 
 
 def limit_min_pct(cfg: dict[str, str]) -> int:
-    return int_setting(cfg, "LAB_LIMIT_MIN_PCT", LIMIT_MIN_PCT, low=0, high=100)
+    """Percent of the 5-hour limit below which a run needs a yes (LAB_LIMIT_MIN_PCT)."""
+    return int_setting(cfg, "LAB_LIMIT_MIN_PCT", limits.MIN_REMAINING_PCT, low=0, high=100)
 
 
 def prepare(command: str, args: argparse.Namespace, *, need_mcp: bool = False) -> dict[str, str]:
@@ -83,8 +82,9 @@ def prepare(command: str, args: argparse.Namespace, *, need_mcp: bool = False) -
 
     Prints warnings; prints errors and exits with status 1 if there are any.
     Called for every command except `tokens`, which creates the credentials
-    the checks look for. `need_mcp`: the matrix uses one of MCP_PROFILES,
-    so Node and Google Chrome must be installed. Makes no network calls.
+    the checks look for, and `report`, which reads a local file only.
+    `need_mcp`: the matrix uses one of MCP_PROFILES, so Node and Google
+    Chrome must be installed. Makes no network calls.
     """
     cfg = env.load(ENV_FILE, os.environ)
     errors = [f"{ENV_FILE.name}: {problem}" for problem in env.file_problems(ENV_FILE, LAB_ROOT)]

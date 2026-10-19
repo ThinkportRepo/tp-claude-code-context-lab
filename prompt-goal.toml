@@ -1,11 +1,13 @@
 # The goal of every test run, the same for every profile, model and effort.
-# After each turn the runner checks the goal; while it is not reached it
-# sends the next follow-up (lab/prompts/followups.txt). Every check must
-# pass. The check types are fixed in lab/labkit/config.py:
+# In a headless run the runner checks it after each turn; while it is not
+# reached it sends the next follow-up (lab/prompts/followups.txt). A session
+# checks it once at the end. Every check must pass. The check types are
+# fixed in lab/labkit/config.py:
 #
 #   pages_live         the repo's GitHub Pages site answers 200; wait_s is how
 #                      long to wait for the Pages build before deciding
-#   homepage_is_pages  the repo's About -> Website field points to that site
+#   homepage_is_pages  the repo's About -> Website field points to the Pages
+#                      URL (no build needed, so no wait)
 #
 # Whether the app works is not part of the goal: a functional check here
 # would change when follow-ups are sent, and with them the token counts.

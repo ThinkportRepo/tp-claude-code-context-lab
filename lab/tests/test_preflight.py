@@ -80,7 +80,7 @@ class Check(TempDirCase):
     def run_check(self, cfg=None, **kwargs):
         full = {"CLAUDE_CODE_OAUTH_TOKEN": TOKEN}
         full.update(cfg or {})
-        opts = dict(need_github=False, need_node=False, timeout_s=1200, now=NOW,
+        opts = dict(need_github=False, need_node=False, need_chrome=False, timeout_s=1200, now=NOW,
                     sandbox=self.sandbox, home=self.home)
         opts.update(kwargs)
         return preflight.check(full, **opts)
@@ -90,7 +90,7 @@ class Check(TempDirCase):
 
     def test_missing_claude_token(self):
         errors, _ = preflight.check(
-            {}, need_github=False, need_node=False, timeout_s=1200, now=NOW,
+            {}, need_github=False, need_node=False, need_chrome=False, timeout_s=1200, now=NOW,
             sandbox=self.sandbox, home=self.home)
         self.assertEqual(len(errors), 1)
         self.assertIn("python3 lab.py tokens claude", errors[0])
@@ -114,6 +114,7 @@ class Check(TempDirCase):
             errors, warnings = self.run_check(need_chrome=True)
         self.assertEqual(len(errors), 1)
         self.assertIn("Google Chrome", errors[0])
+        self.assertIn("lab/matrix.conf", errors[0])  # says why the check applies
         self.assertEqual(warnings, [])
         with mock.patch.object(preflight, "chrome_installed", return_value=True):
             self.assertEqual(self.run_check(need_chrome=True), ([], []))

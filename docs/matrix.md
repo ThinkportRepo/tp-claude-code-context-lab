@@ -18,11 +18,13 @@ id  profile  [prompt]  [model]  [effort]
   - `dev-messy`: twelve plugins and nine more MCP servers, heavily overlapping.
 
   `dev-stack` and `dev-messy` need Node.js (`npx` starts their MCP
-  servers) and Google Chrome (the playwright MCP server drives it). Without
-  them a run does not fail but measures a smaller context, so the lab
-  stops with an error if the matrix uses one of these profiles and either
-  is missing. A new profile with MCP servers belongs in `MCP_PROFILES` in
-  `lab.py`.
+  servers) and Google Chrome (the playwright MCP server drives it).
+  Without `npx` the servers do not start; without Chrome the browser tools
+  fail. Either way a run does not fail but measures a different session,
+  so `setup`, `run` and `session` stop with an error if either is missing
+  while the matrix lists a test with one of these profiles, also when the
+  selected test uses another profile. A new profile with MCP servers
+  belongs in `MCP_PROFILES` in `lab.py`.
 - `prompt`: a file path relative to the lab root (the directory with
   `lab.py`). Without the column, or with `-`, the test uses
   `prompt-simple.md`. A prompt file can ask for any app in the `xyz`
@@ -39,15 +41,15 @@ names the file and line.
 ## The goal
 
 `prompt-goal.toml` in the lab root holds the goal of every test, the same
-for every profile, model and effort. After each turn the runner checks it;
-while it is not reached, the runner sends the next follow-up from
-`lab/prompts/followups.txt`. Each `[[check]]` names one type, and every
-check must pass:
+for every profile, model and effort. In a headless run the runner checks
+it after each turn; while it is not reached, the runner sends the next
+follow-up from `lab/prompts/followups.txt`. A `session` checks it once at
+the end. Each `[[check]]` names one type, and every check must pass:
 
-- `pages_live`: the repository's GitHub Pages site answers. `wait_s` is
-  how long to wait for the Pages build before deciding.
+- `pages_live`: the repository's GitHub Pages site answers 200. `wait_s`
+  is how long to wait for the Pages build before deciding.
 - `homepage_is_pages`: the repository's About -> Website field points to
-  the Pages site.
+  the Pages URL. It needs no build, so it takes no wait.
 
 ```toml
 [[check]]

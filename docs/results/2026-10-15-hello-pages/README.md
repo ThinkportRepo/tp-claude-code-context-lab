@@ -25,8 +25,9 @@ them: [results-pilot.csv](results-pilot.csv). The prompts used:
 - Matrix: the four examples in [matrix.md](../../matrix.md), three runs per
   test, all headless.
 - Series 1 (ids `test-*`) ran the examples as in matrix.md. Series 2 (ids
-  `test2-*`) ran examples 1–3 with `prompt-well-defined.md` instead of the
-  default `prompt-simple.md`; example 4 ran unchanged.
+  `test2-*`) ran examples 1–3 with `prompt-well-defined.md` instead of
+  `prompt-simple.md` (both as copied in this folder); example 4 ran
+  unchanged.
 - Tests with identical settings in different examples are grouped. The
   baseline (`clean`, Haiku, `low`) has n = 15 per prompt; every other row
   has n = 3.

@@ -274,6 +274,11 @@ class Goal(unittest.TestCase):
     def test_missing_type(self):
         self.assert_error('[[check]]\nwait_s = 1\n', "check 1", "type")
 
+    def test_type_that_is_not_a_string(self):
+        for text in ('[[check]]\ntype = ["pages_live"]\n', "check = [1]\n"):
+            with self.subTest(text=text):
+                self.assert_error(text, "check 1", "type")
+
     def test_unknown_field(self):
         self.assert_error(
             '[[check]]\ntype = "homepage_is_pages"\nwait_s = 5\n', "check 1", "unknown key 'wait_s'"

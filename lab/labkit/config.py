@@ -186,7 +186,7 @@ def load_goal(path: Path) -> Goal:
     for n, check in enumerate(checks, start=1):
         where = f"{path}: check {n}"
         kind = check.get("type") if isinstance(check, dict) else None
-        if kind not in GOAL_CHECKS:
+        if not isinstance(kind, str) or kind not in GOAL_CHECKS:
             raise ValueError(f"{where}: unknown type {kind!r} (known: {', '.join(GOAL_CHECKS)})")
         for key in check:
             if key != "type" and key not in GOAL_CHECKS[kind]:

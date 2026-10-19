@@ -43,7 +43,7 @@ def check_header(path: Path) -> None:
     if path.exists() and path.stat().st_size > 0 and _header(path) != list(FIELDS):
         raise ValueError(
             f"{path} has other columns than this lab version writes; move it aside"
-            f" (e.g. to {path.stem}-<date>{path.suffix}, which git ignores) and run again"
+            f" (e.g. to {path.stem}-<date>{path.suffix}) and run again"
         )
 
 

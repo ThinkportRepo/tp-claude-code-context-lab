@@ -11,8 +11,9 @@ guesses.
 - Python 3.11 or newer (standard library only)
 - `git` and the GitHub CLI (`gh`)
 - A new, empty GitHub organization in which you are an admin
-- Node.js with `npx` and Google Chrome, for the `dev-stack` and
-  `dev-messy` profiles
+- Node.js with `npx` and Google Chrome, while `lab/matrix.conf` lists a
+  test with the `dev-stack` or `dev-messy` profile; `setup`, `run` and
+  `session` stop without them, also for a test of another profile
 
 ## Quick start
 

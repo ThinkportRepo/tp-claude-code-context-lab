@@ -1,7 +1,8 @@
 """Usage-limit gate: read the subscription's limits, refuse to run low.
 
 There is no CLI command that reads the limit without an API call, so
-`probe` makes one minimal Haiku call and reads its `rate_limit_event`.
+`probe` makes one minimal call (LAB_PROBE_MODEL, else Haiku) and reads its
+`rate_limit_event`.
 """
 
 import json
@@ -18,6 +19,8 @@ from .runner import headless_argv
 PROBE_PROMPT = "Reply with OK"
 PROBE_MODEL = "claude-haiku-5-5"  # unless LAB_PROBE_MODEL is set
 PROBE_TIMEOUT_S = 120
+# Below this much of the 5-hour limit left, a run needs an explicit yes, unless LAB_LIMIT_MIN_PCT is set.
+MIN_REMAINING_PCT = 10
 
 
 def _utilization_pct(window) -> int | None:
@@ -73,8 +76,8 @@ def probe(lab_root: Path, cfg: dict[str, str]) -> dict | None:
     Runs in a throwaway config dir (no settings, so no plugins) with the
     lab's credentials and LAB_PROBE_MODEL from `cfg`, else PROBE_MODEL.
     None if the call fails or reports no 5-hour window; `seven_day_pct`
-    is None if only that window is missing. A failed call
-    prints its reason (first stderr line, else the result event's error).
+    is None if only that window is missing. A failed call prints its
+    reason (first stderr line, else the result event's error).
     """
     with tempfile.TemporaryDirectory(prefix="lab-probe-") as tmp:
         config_dir, work = Path(tmp) / "config", Path(tmp) / "work"
@@ -113,7 +116,7 @@ def gate(
     *,
     ask: Callable[[str], bool],
     is_tty: bool,
-    min_remaining: int = 10,
+    min_remaining: int = MIN_REMAINING_PCT,
 ) -> bool:
     """Print the limit; True if a run may start.
 
