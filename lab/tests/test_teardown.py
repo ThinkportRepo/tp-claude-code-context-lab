@@ -297,6 +297,12 @@ class Secrets(Base):
         self.assertTrue(kwargs["capture_output"])
         self.assertNotIn(OAUTH_TOKEN, " ".join(argv))
 
+    def test_claude_check_uses_the_probe_model_from_the_config(self):
+        self.cfg["LAB_PROBE_MODEL"] = "claude-sonnet-5-5"
+        self.run_teardown(FakeGitHub(), secrets=True)
+        (argv, _), = self.claude_calls
+        self.assertEqual(argv[argv.index("--model") + 1], "claude-sonnet-5-5")
+
     def claude_not_verified(self):
         return (
             f"Could not verify that the Claude token {env.mask(OAUTH_TOKEN)} was revoked. Open {CLAUDE_URL}"
