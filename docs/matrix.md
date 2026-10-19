@@ -16,6 +16,13 @@ id  profile  [prompt]  [model]  [effort]
   - `superpowers`: the `superpowers` skill plugin.
   - `dev-stack`: a typical developer setup: four plugins, two with MCP servers.
   - `dev-messy`: twelve plugins and nine more MCP servers, heavily overlapping.
+
+  `dev-stack` and `dev-messy` need Node.js (`npx` starts their MCP
+  servers) and Google Chrome (the playwright MCP server drives it). Without
+  them a run does not fail but measures a smaller context, so the lab
+  stops with an error if the matrix uses one of these profiles and either
+  is missing. A new profile with MCP servers belongs in `MCP_PROFILES` in
+  `lab.py`.
 - `prompt`: a file path relative to the lab root (the directory with
   `lab.py`). Without the column, or with `-`, the test uses
   `prompt-simple.md`. A prompt file can ask for any app in the `xyz`

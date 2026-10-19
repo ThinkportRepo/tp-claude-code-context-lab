@@ -8,7 +8,7 @@ First run, in this order:
   3. Set LAB_GH_ORG=<organization> in .env by hand (see .env.example).
   4. python3 lab.py tokens github          create a fine-grained GitHub token (1 day), store it
   5. python3 lab.py tokens github --check  create, push, publish and delete a test repo
-  6. python3 lab.py setup                  check GitHub access and create sandbox dirs (warns about Google Chrome for dev-stack and dev-messy)
+  6. python3 lab.py setup                  check GitHub access and create sandbox dirs
   7. python3 lab.py run test1              run one test headless, record it in results.csv
   8. python3 lab.py report                 summarize results.csv
   9. python3 lab.py teardown --secrets     delete lab repos and sandbox, revoke the tokens
@@ -44,6 +44,7 @@ SANDBOX = LAB_ROOT / "sandbox"
 RUN_TIMEOUT_S = runner.RUN_TIMEOUT_S  # per-run timeout; a GitHub token must outlive it
 NEEDS_GITHUB = {"setup", "run", "session"}
 # Profiles with MCP servers that npx starts and that drive Google Chrome.
+# A new profile with MCP servers belongs here, so its runs get both checks.
 MCP_PROFILES = {"dev-stack", "dev-messy"}
 # teardown has to work with what is left: no Claude token (it may be gone
 # already), no npx, and an expired GitHub token only skips the repo part.
@@ -54,19 +55,21 @@ def results_file() -> Path:
     return LAB_ROOT / "results.csv"
 
 
-def prepare(command: str, args: argparse.Namespace, *, need_node: bool = False) -> dict[str, str]:
+def prepare(command: str, args: argparse.Namespace, *, need_mcp: bool = False) -> dict[str, str]:
     """Check the setup once before a command runs and return the config.
 
     Prints warnings; prints errors and exits with status 1 if there are any.
     Called for every command except `tokens`, which creates the credentials
-    the checks look for. Makes no network calls.
+    the checks look for. `need_mcp`: the matrix uses one of MCP_PROFILES,
+    so Node and Google Chrome must be installed. Makes no network calls.
     """
     cfg = env.load(ENV_FILE, os.environ)
     errors = [f"{ENV_FILE.name}: {problem}" for problem in env.file_problems(ENV_FILE, LAB_ROOT)]
     check_errors, warnings = preflight.check(
         cfg,
         need_github=command in NEEDS_GITHUB,
-        need_node=need_node and command != TEARDOWN,
+        need_node=need_mcp and command != TEARDOWN,
+        need_chrome=need_mcp and command != TEARDOWN,
         need_claude_token=command != TEARDOWN,
         timeout_s=RUN_TIMEOUT_S,
         now=datetime.now(timezone.utc),
@@ -90,8 +93,8 @@ def prepare(command: str, args: argparse.Namespace, *, need_node: bool = False) 
     return cfg
 
 
-def matrix_needs_node() -> bool:
-    """True if any test in matrix.conf uses one of MCP_PROFILES (MCP servers via npx)."""
+def matrix_uses_mcp() -> bool:
+    """True if any test in matrix.conf uses one of MCP_PROFILES (needs Node and Google Chrome)."""
     return any(t.profile in MCP_PROFILES for t in config.load_matrix(MATRIX_FILE, os.environ))
 
 
@@ -238,7 +241,7 @@ def run_session(cfg: dict[str, str], test_id: str, prompt: bool) -> int:
 
 
 def run_setup(cfg: dict[str, str]) -> int:
-    """`lab.py setup`: check org access (and Chrome), create sandbox dirs, show the matrix and the goal."""
+    """`lab.py setup`: check org access, create sandbox dirs, show the matrix and the goal."""
     goal = _load_goal()
     tests = _load_tests(cfg, "all") if goal else None
     if tests is None:
@@ -248,15 +251,6 @@ def run_setup(cfg: dict[str, str]) -> int:
         if not gh.org_ok():
             print(f"error: cannot read organization {cfg['LAB_GH_ORG']} with GH_TOKEN", file=sys.stderr)
             return 1
-        browser_profiles = sorted({t.profile for t in tests} & MCP_PROFILES)
-        if browser_profiles and not preflight.chrome_installed(Path.home()):
-            print(
-                "warning: Google Chrome is not installed. The MCP server of the playwright plugin"
-                " uses the installed Google Chrome (verified 2026-10-14), so runs of the profile(s)"
-                f" {', '.join(browser_profiles)} may fail to open a browser. Install Google Chrome"
-                " to fix this.",
-                file=sys.stderr,
-            )
         for test in tests:
             sandbox.paths(LAB_ROOT, test.id).base.mkdir(parents=True, exist_ok=True)
         print(f"Sandbox: {SANDBOX}")
@@ -349,7 +343,7 @@ def main() -> int:
         help="start without the prompt to inspect the profile; records nothing",
     )  # fmt: skip
 
-    sub.add_parser("setup", help="check GitHub access and create sandbox dirs (warns about Google Chrome for dev-stack and dev-messy)")
+    sub.add_parser("setup", help="check GitHub access and create sandbox dirs")
     sub.add_parser("report", help="summarize results.csv")
     td = sub.add_parser("teardown", help="delete the lab's repos and sandbox")
     td.add_argument("--secrets", action="store_true", help="also revoke the GitHub and Claude tokens")
@@ -362,14 +356,14 @@ def main() -> int:
     if args.command != "tokens":
         # Only the commands that run tests read the matrix; `tokens` and
         # `teardown` must work without it.
-        need_node = False
+        need_mcp = False
         if args.command != TEARDOWN:
             try:
-                need_node = matrix_needs_node()
+                need_mcp = matrix_uses_mcp()
             except (OSError, ValueError) as exc:
                 print(f"error: {exc}", file=sys.stderr)
                 return 1
-        cfg = prepare(args.command, args, need_node=need_node)
+        cfg = prepare(args.command, args, need_mcp=need_mcp)
     if args.command == "run":
         return run_tests(cfg, args.test, args.repeat)
     if args.command == "session":

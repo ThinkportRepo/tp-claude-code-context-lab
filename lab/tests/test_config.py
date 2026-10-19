@@ -450,19 +450,19 @@ class CliWiring(TempLab):
         spec.loader.exec_module(module)
         return module
 
-    def needs_node(self, text):
+    def uses_mcp(self, text):
         cli = self.load_lab_module()
         self.matrix.write_text(text)
         with mock.patch.object(cli, "MATRIX_FILE", self.matrix):
-            return cli.matrix_needs_node()
+            return cli.matrix_uses_mcp()
 
-    def test_need_node_only_with_an_mcp_profile_in_matrix(self):
-        self.assertFalse(self.needs_node("test1 clean prompt-simple.md\ntest2 superpowers prompt-simple.md\n"))
-        self.assertTrue(self.needs_node("test1 clean prompt-simple.md\ntest2 dev-stack prompt-simple.md\n"))
-        self.assertTrue(self.needs_node("test1 clean prompt-simple.md\ntest2 dev-messy prompt-simple.md\n"))
+    def test_mcp_only_with_an_mcp_profile_in_matrix(self):
+        self.assertFalse(self.uses_mcp("test1 clean prompt-simple.md\ntest2 superpowers prompt-simple.md\n"))
+        self.assertTrue(self.uses_mcp("test1 clean prompt-simple.md\ntest2 dev-stack prompt-simple.md\n"))
+        self.assertTrue(self.uses_mcp("test1 clean prompt-simple.md\ntest2 dev-messy prompt-simple.md\n"))
 
-    def test_repo_matrix_needs_node(self):
-        self.assertTrue(self.load_lab_module().matrix_needs_node())
+    def test_repo_matrix_uses_mcp(self):
+        self.assertTrue(self.load_lab_module().matrix_uses_mcp())
 
     def test_run_and_session_stop_on_a_missing_goal_file(self):
         cli = self.load_lab_module()

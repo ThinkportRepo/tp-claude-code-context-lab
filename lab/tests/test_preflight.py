@@ -108,6 +108,16 @@ class Check(TempDirCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("npx", errors[0])
 
+    def test_chrome_only_needed_with_need_chrome(self):
+        with mock.patch.object(preflight, "chrome_installed", return_value=False):
+            self.assertEqual(self.run_check(need_chrome=False), ([], []))
+            errors, warnings = self.run_check(need_chrome=True)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Google Chrome", errors[0])
+        self.assertEqual(warnings, [])
+        with mock.patch.object(preflight, "chrome_installed", return_value=True):
+            self.assertEqual(self.run_check(need_chrome=True), ([], []))
+
     def test_old_python(self):
         with mock.patch.object(preflight.sys, "version_info", (3, 10, 0)):
             errors, _ = self.run_check()
@@ -281,7 +291,7 @@ class Prepare(unittest.TestCase):
         self.tmp = Path(tmp.name).resolve()
         self.env_file = self.tmp / ".env"  # never the developer's real .env
 
-    def prepare(self, command, errors, warnings, file_problems=(), need_node=False, args=None,
+    def prepare(self, command, errors, warnings, file_problems=(), need_mcp=False, args=None,
                 results_file=None):
         cli = self.load_lab_module()
         out, err = io.StringIO(), io.StringIO()
@@ -292,7 +302,7 @@ class Prepare(unittest.TestCase):
              mock.patch.dict("os.environ", {"GH_TOKEN": "ghp_SECRETSECRET"}), \
              contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                cfg = cli.prepare(command, args or argparse.Namespace(), need_node=need_node)
+                cfg = cli.prepare(command, args or argparse.Namespace(), need_mcp=need_mcp)
                 code = None
             except SystemExit as e:
                 cfg, code = None, e.code
@@ -346,22 +356,25 @@ class Prepare(unittest.TestCase):
         self.assertIn("parent CLAUDE.md", output)
         self.assertEqual(cfg["GH_TOKEN"], "ghp_SECRETSECRET")
 
-    def test_need_github_mapping_and_need_node_pass_through(self):
+    def test_need_github_mapping_and_need_mcp_pass_through(self):
         for command in ("setup", "run", "session"):
-            *_, check = self.prepare(command, [], [], need_node=True)
+            *_, check = self.prepare(command, [], [], need_mcp=True)
             self.assertTrue(check.call_args.kwargs["need_github"], command)
             self.assertTrue(check.call_args.kwargs["need_node"], command)
+            self.assertTrue(check.call_args.kwargs["need_chrome"], command)
             self.assertTrue(check.call_args.kwargs["need_claude_token"], command)
             self.assertEqual(check.call_args.kwargs["timeout_s"], 1200)
         *_, check = self.prepare("report", [], [])
         self.assertFalse(check.call_args.kwargs["need_github"])
         self.assertFalse(check.call_args.kwargs["need_node"])
+        self.assertFalse(check.call_args.kwargs["need_chrome"])
 
-    def test_teardown_needs_no_claude_token_npx_or_github_margin(self):
-        *_, check = self.prepare("teardown", [], [], need_node=True)
+    def test_teardown_needs_no_claude_token_npx_chrome_or_github_margin(self):
+        *_, check = self.prepare("teardown", [], [], need_mcp=True)
         kwargs = check.call_args.kwargs
         self.assertEqual(
-            (kwargs["need_github"], kwargs["need_node"], kwargs["need_claude_token"]), (False, False, False)
+            (kwargs["need_github"], kwargs["need_node"], kwargs["need_chrome"], kwargs["need_claude_token"]),
+            (False, False, False, False),
         )
 
     def real_prepare(self, command, environ):
@@ -373,7 +386,7 @@ class Prepare(unittest.TestCase):
              mock.patch.dict("os.environ", environ, clear=True), \
              contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
             try:
-                cli.prepare(command, argparse.Namespace(), need_node=True)
+                cli.prepare(command, argparse.Namespace(), need_mcp=True)
                 return None, out.getvalue()
             except SystemExit as e:
                 return e.code, out.getvalue()
