@@ -27,9 +27,8 @@ id  profile  [prompt]  [model]  [effort]
   belongs in `MCP_PROFILES` in `lab.py`.
 - `prompt`: a file path relative to the lab root (the directory with
   `lab.py`). Without the column, or with `-`, the test uses
-  `prompt-simple.md`. A prompt file can ask for any app in the `xyz`
-  directory, as long as it asks for what `prompt-goal.toml` checks (see
-  below).
+  `prompt-simple.md`. [prompts-and-goal.md](prompts-and-goal.md)
+  describes the prompt files and the goal they have to match.
 - `model`: a model ID. Without the column, or with `-`, the test uses
   `LAB_MODEL` from `.env`, else `claude-haiku-5-5`.
 - `effort`: `low`, `medium`, `high`, `xhigh` or `max`, passed to Claude as
@@ -38,41 +37,12 @@ id  profile  [prompt]  [model]  [effort]
 Use `-` to skip a column and still fill a later one. An error in the file
 names the file and line.
 
-## The goal
-
-`prompt-goal.toml` in the lab root holds the goal of every test, the same
-for every profile, model and effort. In a headless run the runner checks
-it after each turn; while it is not reached, the runner sends the next
-follow-up from `lab/prompts/followups.txt`. A `session` checks it once at
-the end. Each `[[check]]` names one type, and every check must pass:
-
-- `pages_live`: the repository's GitHub Pages site answers 200. `wait_s`
-  is how long to wait for the Pages build before deciding.
-- `homepage_is_pages`: the repository's About -> Website field points to
-  the Pages URL. It needs no build, so it takes no wait.
-
-```toml
-[[check]]
-type   = "pages_live"
-wait_s = 180
-
-[[check]]
-type = "homepage_is_pages"
-```
-
-Whether the app works is not checked: such a check would change when
-follow-ups are sent, and with them the token counts. `python3 lab.py
-setup` shows the goal; a missing or invalid file stops `setup`, `run` and
-`session`.
-
 ## Running tests
 
 Run one test with `python3 lab.py run <id>`, all tests with
 `python3 lab.py run all`. `REPEAT=n` in `.env`, or `--repeat n`, runs each
-test n times. `python3 lab.py report` summarizes all recorded runs.
-When a series is finished, keep it in `docs/results/<date>-<scenario>/`
-with the `results.csv`, the prompt files and the `prompt-goal.toml` it
-used.
+test n times. Each run adds a row to `results.csv` in the lab root;
+`python3 lab.py report` summarizes all recorded runs.
 
 Each example below is a complete `lab/matrix.conf`, so `run all` runs
 exactly its tests. To keep the existing tests, add the lines instead and

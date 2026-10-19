@@ -91,11 +91,10 @@ test2    clean        prompt-well-defined.md
 test9    clean        prompt-simple.md        claude-sonnet-5   medium
 ```
 
-`prompt-goal.toml` sets the goal every test is checked against; the
-prompts must ask for what it checks.
-
-[docs/matrix.md](docs/matrix.md) describes the columns and the goal and
-has examples. Finished series are kept in [docs/results/](docs/results/).
+[docs/matrix.md](docs/matrix.md) describes the columns and has examples.
+[docs/prompts-and-goal.md](docs/prompts-and-goal.md) describes the prompt
+files, the follow-ups and `prompt-goal.toml`, the goal every test is
+checked against.
 
 ## Contributing and security
 
