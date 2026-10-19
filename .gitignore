@@ -57,11 +57,10 @@ override.tf.json
 .claude/settings.local.json
 
 # --- Claude Code Context Lab (local test runs) ---
-sandbox/
-results.csv
-results-*.csv
-# Published measurement results live in docs/.
-!docs/results-*.csv
+/sandbox/
+# Only the default results file in the root; adding a series to
+# docs/results/ is a deliberate step.
+/results.csv
 
 # --- Local agent workspace ---
 .superpowers/

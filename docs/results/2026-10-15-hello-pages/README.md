@@ -7,7 +7,11 @@
 > token counts and the effect of profiles, prompts, models and effort can
 > be completely different.
 
-Raw data: [results-2026-10-15.csv](results-2026-10-15.csv), 72 runs.
+Raw data: [results.csv](results.csv), 72 runs; the pilot runs before
+them: [results-pilot.csv](results-pilot.csv). The prompts used:
+[prompt-simple.md](prompt-simple.md),
+[prompt-well-defined.md](prompt-well-defined.md). The goal predates
+`prompt-goal.toml` and is described under Setup.
 
 ## Setup
 
@@ -18,7 +22,7 @@ Raw data: [results-2026-10-15.csv](results-2026-10-15.csv), 72 runs.
   with up to two follow-up prompts (`lab/prompts/followups.txt`). All
   values include these turns. 12 runs used them: the 8 failures, the
   other 2 Sonnet runs with the simple prompt, and 2 Haiku runs.
-- Matrix: the four examples in [matrix.md](matrix.md), three runs per
+- Matrix: the four examples in [matrix.md](../../matrix.md), three runs per
   test, all headless.
 - Series 1 (ids `test-*`) ran the examples as in matrix.md. Series 2 (ids
   `test2-*`) ran examples 1–3 with `prompt-well-defined.md` instead of the

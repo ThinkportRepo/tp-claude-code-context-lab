@@ -94,7 +94,7 @@ test9    clean        prompt-simple.md        claude-sonnet-5   medium
 prompts must ask for what it checks.
 
 [docs/matrix.md](docs/matrix.md) describes the columns and the goal and
-has examples.
+has examples. Finished series are kept in [docs/results/](docs/results/).
 
 ## Contributing and security
 

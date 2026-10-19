@@ -68,6 +68,9 @@ setup` shows the goal; a missing or invalid file stops `setup`, `run` and
 Run one test with `python3 lab.py run <id>`, all tests with
 `python3 lab.py run all`. `REPEAT=n` in `.env`, or `--repeat n`, runs each
 test n times. `python3 lab.py report` summarizes all recorded runs.
+When a series is finished, keep it in `docs/results/<date>-<scenario>/`
+with the `results.csv`, the prompt files and the `prompt-goal.toml` it
+used.
 
 Each example below is a complete `lab/matrix.conf`, so `run all` runs
 exactly its tests. To keep the existing tests, add the lines instead and
