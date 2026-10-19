@@ -193,6 +193,12 @@ class Probe(FakeClaude):
         (call,) = self.p_calls()
         self.assertEqual(call["argv"][call["argv"].index("-p") + 1], "Reply with OK")
 
+    def test_probe_model_default_and_from_the_config(self):
+        limits.probe(self.lab_root, CFG)
+        limits.probe(self.lab_root, CFG | {"LAB_PROBE_MODEL": "claude-sonnet-5-5"})
+        models = [c["argv"][c["argv"].index("--model") + 1] for c in self.p_calls()]
+        self.assertEqual(models, ["claude-haiku-5-5", "claude-sonnet-5-5"])
+
     def test_probe_none_when_call_fails(self):
         os.environ["FAKE_CLAUDE_NO_TRANSCRIPT"] = "1"
         with redirect_stderr(io.StringIO()):
@@ -731,11 +737,21 @@ class RunCommand(unittest.TestCase):
             self.assertEqual(call.kwargs["limit_start"], 12)
         self.assertEqual(out.count("88 % left"), 2)
 
-    def test_run_passes_the_goal_file(self):
-        code, run, _, _ = self.run_tests({}, {"five_hour_pct": 12, "seven_day_pct": 5})
+    def test_run_passes_the_goal_file_and_the_timeout(self):
+        code, run, _, _ = self.run_tests({"LAB_RUN_TIMEOUT_S": "600"}, {"five_hour_pct": 12, "seven_day_pct": 5})
         self.assertEqual(code, 0)
         (call,) = run.call_args_list
         self.assertEqual(call.kwargs["goal"], config.load_goal(REPO / config.GOAL_FILE))
+        self.assertEqual(call.kwargs["timeout_s"], 600)
+
+    def test_gate_threshold_from_config(self):
+        # 85 % left: enough by default, too little with LAB_LIMIT_MIN_PCT=90.
+        probe = {"five_hour_pct": 15, "seven_day_pct": 5}
+        self.assertEqual(self.run_tests({}, probe)[0], 0)
+        code, run, out, _ = self.run_tests({"LAB_LIMIT_MIN_PCT": "90"}, probe)
+        self.assertEqual(code, 1)
+        run.assert_not_called()
+        self.assertIn("skipping test1", out)
 
     def test_run_stops_on_runtime_error(self):
         cli = load_cli()

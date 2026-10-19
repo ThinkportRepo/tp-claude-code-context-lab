@@ -41,11 +41,12 @@ ENV_FILE = LAB_ROOT / ".env"
 MATRIX_FILE = LAB_ROOT / "lab" / "matrix.conf"
 GOAL_FILE = LAB_ROOT / config.GOAL_FILE
 SANDBOX = LAB_ROOT / "sandbox"
-RUN_TIMEOUT_S = runner.RUN_TIMEOUT_S  # per-run timeout; a GitHub token must outlive it
 NEEDS_GITHUB = {"setup", "run", "session"}
 # Profiles with MCP servers that npx starts and that drive Google Chrome.
 # A new profile with MCP servers belongs here, so its runs get both checks.
 MCP_PROFILES = {"dev-stack", "dev-messy"}
+# Below this much of the 5-hour limit left, a run needs an explicit yes (LAB_LIMIT_MIN_PCT).
+LIMIT_MIN_PCT = 10
 # teardown has to work with what is left: no Claude token (it may be gone
 # already), no npx, and an expired GitHub token only skips the repo part.
 TEARDOWN = "teardown"
@@ -53,6 +54,28 @@ TEARDOWN = "teardown"
 
 def results_file() -> Path:
     return LAB_ROOT / "results.csv"
+
+
+def int_setting(cfg: dict[str, str], key: str, default: int, low: int, high: int | None = None) -> int:
+    """The integer setting `key` from the config, else `default`; ValueError naming `key` if out of range."""
+    raw = cfg.get(key) or str(default)
+    try:
+        value = int(raw)
+    except ValueError:
+        value = None
+    if value is None or value < low or (high is not None and value > high):
+        expected = f"from {low} to {high}" if high is not None else f"of at least {low}"
+        raise ValueError(f"{key}: expected an integer {expected}, got {raw!r}")
+    return value
+
+
+def run_timeout_s(cfg: dict[str, str]) -> int:
+    """Per-run timeout (LAB_RUN_TIMEOUT_S); a GitHub token must outlive it."""
+    return int_setting(cfg, "LAB_RUN_TIMEOUT_S", runner.RUN_TIMEOUT_S, low=1)
+
+
+def limit_min_pct(cfg: dict[str, str]) -> int:
+    return int_setting(cfg, "LAB_LIMIT_MIN_PCT", LIMIT_MIN_PCT, low=0, high=100)
 
 
 def prepare(command: str, args: argparse.Namespace, *, need_mcp: bool = False) -> dict[str, str]:
@@ -65,13 +88,20 @@ def prepare(command: str, args: argparse.Namespace, *, need_mcp: bool = False) -
     """
     cfg = env.load(ENV_FILE, os.environ)
     errors = [f"{ENV_FILE.name}: {problem}" for problem in env.file_problems(ENV_FILE, LAB_ROOT)]
+    timeout_s = runner.RUN_TIMEOUT_S
+    if command != TEARDOWN:  # teardown has to work whatever the run settings say
+        try:
+            timeout_s = run_timeout_s(cfg)
+            limit_min_pct(cfg)
+        except ValueError as exc:
+            errors.append(str(exc))
     check_errors, warnings = preflight.check(
         cfg,
         need_github=command in NEEDS_GITHUB,
         need_node=need_mcp and command != TEARDOWN,
         need_chrome=need_mcp and command != TEARDOWN,
         need_claude_token=command != TEARDOWN,
-        timeout_s=RUN_TIMEOUT_S,
+        timeout_s=timeout_s,
         now=datetime.now(timezone.utc),
         sandbox=SANDBOX,
         home=Path.home(),
@@ -157,7 +187,8 @@ def _load_goal() -> config.Goal | None:
 def _gate(cfg: dict[str, str]) -> tuple[bool, dict | None]:
     """Probe the usage limit and ask the gate; (may run, probe result)."""
     probe = limits.probe(LAB_ROOT, cfg)
-    return limits.gate(probe, ask=ask_yes_no, is_tty=sys.stdin.isatty()), probe
+    allowed = limits.gate(probe, ask=ask_yes_no, is_tty=sys.stdin.isatty(), min_remaining=limit_min_pct(cfg))
+    return allowed, probe
 
 
 def _summary(row: dict) -> str:
@@ -196,7 +227,7 @@ def run_tests(cfg: dict[str, str], selection: str, repeat: int | None) -> int:
                 row = runner.run_headless(
                     LAB_ROOT, test, cfg, gh, goal=goal,
                     limit_start=probe["five_hour_pct"] if probe else None,
-                    timeout_s=RUN_TIMEOUT_S,
+                    timeout_s=run_timeout_s(cfg),
                 )  # fmt: skip
                 print(_summary(row))
     except KeyboardInterrupt:

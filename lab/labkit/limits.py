@@ -16,7 +16,7 @@ from . import sandbox
 from .runner import headless_argv
 
 PROBE_PROMPT = "Reply with OK"
-PROBE_MODEL = "claude-haiku-5-5"
+PROBE_MODEL = "claude-haiku-5-5"  # unless LAB_PROBE_MODEL is set
 PROBE_TIMEOUT_S = 120
 
 
@@ -71,8 +71,9 @@ def probe(lab_root: Path, cfg: dict[str, str]) -> dict | None:
     """Current limit use as `{"five_hour_pct", "seven_day_pct"}`, or None.
 
     Runs in a throwaway config dir (no settings, so no plugins) with the
-    lab's credentials. None if the call fails or reports no 5-hour window;
-    `seven_day_pct` is None if only that window is missing. A failed call
+    lab's credentials and LAB_PROBE_MODEL from `cfg`, else PROBE_MODEL.
+    None if the call fails or reports no 5-hour window; `seven_day_pct`
+    is None if only that window is missing. A failed call
     prints its reason (first stderr line, else the result event's error).
     """
     with tempfile.TemporaryDirectory(prefix="lab-probe-") as tmp:
@@ -81,7 +82,7 @@ def probe(lab_root: Path, cfg: dict[str, str]) -> dict | None:
         work.mkdir()
         try:
             cp = subprocess.run(
-                headless_argv(PROBE_PROMPT, PROBE_MODEL),
+                headless_argv(PROBE_PROMPT, cfg.get("LAB_PROBE_MODEL") or PROBE_MODEL),
                 cwd=work,
                 env=sandbox.child_env(os.environ, lab_root, config_dir, cfg),
                 stdin=subprocess.DEVNULL,

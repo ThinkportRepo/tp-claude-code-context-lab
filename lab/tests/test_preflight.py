@@ -292,14 +292,14 @@ class Prepare(unittest.TestCase):
         self.env_file = self.tmp / ".env"  # never the developer's real .env
 
     def prepare(self, command, errors, warnings, file_problems=(), need_mcp=False, args=None,
-                results_file=None):
+                results_file=None, environ=None):
         cli = self.load_lab_module()
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.object(cli, "ENV_FILE", self.env_file), \
              mock.patch.object(cli, "results_file", return_value=results_file or self.tmp / "none.csv"), \
              mock.patch.object(preflight, "check", return_value=(errors, warnings)) as check, \
              mock.patch.object(env, "file_problems", return_value=list(file_problems)), \
-             mock.patch.dict("os.environ", {"GH_TOKEN": "ghp_SECRETSECRET"}), \
+             mock.patch.dict("os.environ", {"GH_TOKEN": "ghp_SECRETSECRET", **(environ or {})}), \
              contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
                 cfg = cli.prepare(command, args or argparse.Namespace(), need_mcp=need_mcp)
@@ -376,6 +376,31 @@ class Prepare(unittest.TestCase):
             (kwargs["need_github"], kwargs["need_node"], kwargs["need_chrome"], kwargs["need_claude_token"]),
             (False, False, False, False),
         )
+
+    def test_run_timeout_from_the_environment_reaches_the_token_check(self):
+        *_, check = self.prepare("run", [], [], environ={"LAB_RUN_TIMEOUT_S": "3600"})
+        self.assertEqual(check.call_args.kwargs["timeout_s"], 3600)
+
+    def test_bad_settings_are_errors(self):
+        for key, value in (("LAB_RUN_TIMEOUT_S", "0"), ("LAB_RUN_TIMEOUT_S", "20m"),
+                           ("LAB_LIMIT_MIN_PCT", "-1"), ("LAB_LIMIT_MIN_PCT", "101"),
+                           ("LAB_LIMIT_MIN_PCT", "ten")):
+            with self.subTest(key=key, value=value):
+                _, code, output, _ = self.prepare("run", [], [], environ={key: value})
+                self.assertEqual(code, 1)
+                self.assertIn(key, output)
+
+    def test_limit_min_pct_takes_0_to_100(self):
+        for value in ("0", "100"):
+            with self.subTest(value=value):
+                _, code, output, _ = self.prepare("run", [], [], environ={"LAB_LIMIT_MIN_PCT": value})
+                self.assertIsNone(code, output)
+
+    def test_teardown_ignores_bad_settings(self):
+        _, code, output, _ = self.prepare(
+            "teardown", [], [], environ={"LAB_RUN_TIMEOUT_S": "x", "LAB_LIMIT_MIN_PCT": "x"}
+        )
+        self.assertIsNone(code, output)
 
     def real_prepare(self, command, environ):
         """prepare with the real checks, tools found on PATH and only `environ` set."""
