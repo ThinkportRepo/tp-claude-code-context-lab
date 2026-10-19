@@ -1,7 +1,8 @@
 """One recorded run of a test: reset, `claude` turns, goal check, collect.
 
-The goal: the GitHub Pages site shows PAGES_TEXT and the repo's About ->
-Website field links to it (`GitHub.goal_ok`).
+The goal: the GitHub Pages site is published and the repo's About ->
+Website field links to it (`GitHub.goal_ok`). Whether the app works is not
+part of the goal.
 
 `run_headless` drives `claude -p`; `run_interactive` hands the terminal to
 a human. Every run appends exactly one row to `<lab_root>/results.csv`, also
@@ -24,11 +25,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from . import config, metrics, results, sandbox
-from .github import S5_TEXT, GitHub
+from .github import GitHub
 
 RUN_TIMEOUT_S = 1200
 KILL_GRACE_S = 5  # after SIGTERM, before SIGKILL
-PAGES_TEXT = S5_TEXT  # "Hello GitHub Pages"
 PAGES_WAIT_S = 180
 FOLLOWUPS_FILE = Path("lab") / "prompts" / "followups.txt"
 STATUS_FILE = "statusline.json"
@@ -284,7 +284,7 @@ def run_headless(
             wait_s = PAGES_WAIT_S if gh.pages_status(name) is not None else 0
             if wait_s:
                 print(f"{test.id}: waiting up to {wait_s} s for the GitHub Pages site to go live")
-            goal_ok = gh.goal_ok(name, PAGES_TEXT, wait_s=wait_s)
+            goal_ok = gh.goal_ok(name, wait_s=wait_s)
             if goal_ok or not followups or not session:
                 break
             print(f"{test.id}: follow-up {len(streams)}")
@@ -293,7 +293,7 @@ def run_headless(
             # Final verification: give a site configured in the last turn its
             # build time. Without Pages at all there is nothing to wait for.
             print(f"{test.id}: waiting up to {PAGES_WAIT_S} s for the GitHub Pages site to go live")
-            goal_ok = gh.goal_ok(name, PAGES_TEXT, wait_s=PAGES_WAIT_S)
+            goal_ok = gh.goal_ok(name, wait_s=PAGES_WAIT_S)
     except _RunTimeout:
         timed_out = True
         print(f"{test.id}: timed out after {timeout_s} s")
@@ -387,7 +387,7 @@ def run_interactive(
         wait_s = PAGES_WAIT_S if gh.pages_status(name) is not None else 0
         if wait_s:
             print(f"{test.id}: waiting up to {wait_s} s for the GitHub Pages site to go live")
-        goal_ok = gh.goal_ok(name, PAGES_TEXT, wait_s=wait_s)
+        goal_ok = gh.goal_ok(name, wait_s=wait_s)
     except BaseException:
         failed = True
         raise

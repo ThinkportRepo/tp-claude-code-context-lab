@@ -70,8 +70,8 @@ class FakeGitHub:
             return self.statuses.pop(0) if len(self.statuses) > 1 else self.statuses[0]
         return self.status
 
-    def goal_ok(self, name, text, wait_s):
-        self.calls.append(("goal_ok", name, text, wait_s))
+    def goal_ok(self, name, wait_s):
+        self.calls.append(("goal_ok", name, wait_s))
         if self.goal_ok_raises:
             raise self.goal_ok_raises
         return self.goal_ok_results.pop(0) if self.goal_ok_results else False
@@ -295,7 +295,7 @@ class HeadlessRun(FakeClaude):
         self.assertEqual(argv[argv.index("--resume") + 1], SESSION)
         self.assertEqual(argv[argv.index("-p") + 1], FOLLOWUPS[0])
         self.assertEqual(row["status"], "ok")
-        waits = [c[3] for c in gh.calls if c[0] == "goal_ok"]
+        waits = [c[2] for c in gh.calls if c[0] == "goal_ok"]
         self.assertEqual(waits, [0, 0])
 
     def test_followups_stop_when_none_left(self):
@@ -305,19 +305,19 @@ class HeadlessRun(FakeClaude):
         self.assertEqual(row["status"], "failed")
         self.assertIs(row["goal_ok"], False)
         # Pages was never configured: no 180 s wait for a build that cannot come.
-        self.assertEqual([c[3] for c in gh.calls if c[0] == "goal_ok"], [0, 0, 0])
+        self.assertEqual([c[2] for c in gh.calls if c[0] == "goal_ok"], [0, 0, 0])
 
     def test_final_wait_when_pages_appears_after_the_last_turn(self):
         gh = FakeGitHub(goal_ok=[], pages_statuses=[None, None, None, {"status": "building"}])
         self.run_headless(gh)
         # The last check gives a just-configured site the full build time before the verdict.
-        self.assertEqual([c[3] for c in gh.calls if c[0] == "goal_ok"], [0, 0, 0, 180])
+        self.assertEqual([c[2] for c in gh.calls if c[0] == "goal_ok"], [0, 0, 0, 180])
 
     def test_no_followup_while_pages_building(self):
         gh = FakeGitHub(goal_ok=[True], pages_status={"status": "building"})
         row = self.run_headless(gh)
         self.assertEqual(len(self.p_calls()), 1)
-        self.assertIn(("goal_ok", "lab-test1", "Hello GitHub Pages", 180), gh.calls)
+        self.assertIn(("goal_ok", "lab-test1", 180), gh.calls)
         self.assertEqual(row["status"], "ok")
 
     def test_timeout_recorded(self):
@@ -572,7 +572,7 @@ class Interactive(FakeClaude):
         self.assertEqual(row["status"], "ok")
         self.assertIs(row["goal_ok"], True)
         self.assertEqual(set(row), set(results.FIELDS))
-        self.assertIn(("goal_ok", "lab-test1", "Hello GitHub Pages", 180), gh.calls)
+        self.assertIn(("goal_ok", "lab-test1", 180), gh.calls)
         (csv_row,) = self.csv_rows()
         self.assertEqual((csv_row["mode"], csv_row["ctx_start"]), ("interactive", "31115"))
         run_dir = self.lab_root / "sandbox" / "test1" / "results" / row["timestamp"]
@@ -582,7 +582,7 @@ class Interactive(FakeClaude):
     def test_no_pages_wait_when_pages_was_never_configured(self):
         gh = FakeGitHub(goal_ok=[False])
         row = self.run_interactive(gh)
-        self.assertEqual([c[3] for c in gh.calls if c[0] == "goal_ok"], [0])
+        self.assertEqual([c[2] for c in gh.calls if c[0] == "goal_ok"], [0])
         self.assertNotIn("waiting up to", self.out.getvalue())
         self.assertEqual(row["status"], "failed")
 
