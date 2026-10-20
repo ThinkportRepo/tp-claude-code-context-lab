@@ -771,11 +771,26 @@ def load_cli():
     return cli
 
 
+def load_cli_with_matrix(case: unittest.TestCase, text: str = "test1 clean prompt-simple.md\n"):
+    """load_cli() with a lab/matrix.conf of its own, so the shipped test list does not matter."""
+    cli = load_cli()
+    tmp = tempfile.TemporaryDirectory()
+    case.addCleanup(tmp.cleanup)
+    root = Path(tmp.name)
+    (root / "lab").mkdir()
+    (root / "lab" / "profiles").symlink_to(REPO / "lab" / "profiles")
+    for name in ("prompt-simple.md", "prompt-well-defined.md"):
+        shutil.copy(REPO / name, root / name)
+    cli.MATRIX_FILE = root / "lab" / "matrix.conf"
+    cli.MATRIX_FILE.write_text(text)
+    return cli
+
+
 class RunCommand(unittest.TestCase):
     """`lab.py run` with the probe and the runner replaced; nothing is called for real."""
 
     def run_tests(self, cfg, probe, selection="test1", repeat=None, assessment_file=None):
-        cli = load_cli()
+        cli = load_cli_with_matrix(self)
         if assessment_file:
             cli.ASSESSMENT_FILE = assessment_file
         row = dict.fromkeys(results.FIELDS) | {"status": "ok"}
@@ -830,7 +845,7 @@ class RunCommand(unittest.TestCase):
         self.assertIn("skipping test1", out)
 
     def test_run_stops_on_runtime_error(self):
-        cli = load_cli()
+        cli = load_cli_with_matrix(self)
         err = io.StringIO()
         with mock.patch.object(cli.limits, "probe", return_value={"five_hour_pct": 1, "seven_day_pct": 1}), \
              mock.patch.object(cli.runner, "run_headless", side_effect=RuntimeError("install failed")), \
@@ -913,7 +928,7 @@ class SessionCommand(unittest.TestCase):
     """`lab.py session` with the probe and the runner replaced; nothing is called for real."""
 
     def session(self, test_id, probe, *, prompt=True, row=None):
-        cli = load_cli()
+        cli = load_cli_with_matrix(self)
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.object(cli.limits, "probe", return_value=probe), \
              mock.patch.object(cli.runner, "run_interactive", return_value=row) as run, \
