@@ -78,12 +78,23 @@ PROBE = r"""(() => {
 
   const tick = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   // How long reacts_to_clicks watches the page without clicking: what changes
-  // again within it (a clock, an animation) is the page's own doing.
+  // within it (a clock, an animation) is the page's own doing.
   const QUIET_MS = 2000;
-  // What a click can change outside the DOM tree: form state and canvas
-  // pixels. The clicked element's own state (a checkbox the browser toggles) does not count.
-  const formState = (clicked) => JSON.stringify([...document.querySelectorAll("input, select, textarea")]
-    .filter((e) => e !== clicked).map((e) => [e.value, e.checked, e.selectedIndex]));
+  // Inputs a click changes without any script: the clicked one, a label's
+  // control, and the other radios of its group.
+  const toggledByBrowser = (clicked) => {
+    const control = clicked.control || clicked.closest?.("label")?.control || clicked;
+    const toggled = new Set([clicked, control]);
+    if (control.type === "radio" && control.name) {
+      for (const r of document.querySelectorAll('input[type="radio"]')) {
+        if (r.name === control.name && r.form === control.form) toggled.add(r);
+      }
+    }
+    return toggled;
+  };
+  // What a click can change outside the DOM tree: form state and canvas pixels.
+  const formState = (ignored) => JSON.stringify([...document.querySelectorAll("input, select, textarea")]
+    .filter((e) => !ignored.has(e)).map((e) => [e.value, e.checked, e.selectedIndex]));
   const pixels = () => [...document.querySelectorAll("canvas")]
     .map((c) => { try { return c.toDataURL(); } catch { return ""; } }).join();
   // The nodes that change while `action` runs and `ms` pass.
@@ -115,14 +126,15 @@ PROBE = r"""(() => {
       content: !!document.body && (document.body.innerText.trim() !== ""
         || !!document.body.querySelector("canvas, svg, img, video")),
     }),
-    // Clicks targets until one changes the page. A changed node counts only
-    // if it then stays put for QUIET_MS without a click; links and forms must
-    // not navigate away, and a click that reloads the page counts.
+    // Clicks targets until one changes the page. Nodes that changed during
+    // QUIET_MS without a click do not count, so changes that repeat slower
+    // or start later can still pass. Links and forms must not navigate away;
+    // a click that reloads the page (within the click window) counts.
     reacts_to_clicks: async () => {
       add.call(document, "click", (e) => { if (e.target.closest?.("a[href]")) e.preventDefault(); }, true);
       add.call(document, "submit", (e) => e.preventDefault(), true);
       const before = errors.length;
-      // beforeunload fires inside el.click() when the click navigates.
+      // Set while a click and its window run; a navigation then is the click's.
       let clicking = false;
       add.call(window, "beforeunload", () => {
         if (clicking) sessionStorage.setItem(NAVIGATED, JSON.stringify(errors.slice(before)));
@@ -133,21 +145,16 @@ PROBE = r"""(() => {
       const canvasMoves = pixels() !== startPixels;
       let reacts = false;
       for (const el of all) {
-        const form = formState(el);
+        const ignored = toggledByBrowser(el);
+        const form = formState(ignored);
         const image = pixels();
-        const nodes = await changedNodes(() => { clicking = true; el.click(); clicking = false; }, 100);
-        if (formState(el) !== form || (!canvasMoves && pixels() !== image)) {
+        clicking = true;
+        const nodes = await changedNodes(() => el.click(), 100);
+        clicking = false;
+        if ([...nodes].some((n) => !own.has(n)) || formState(ignored) !== form
+            || (!canvasMoves && pixels() !== image)) {
           reacts = true;
           break;
-        }
-        const fresh = [...nodes].filter((n) => !own.has(n));
-        if (fresh.length) {
-          const again = await changedNodes(() => {}, QUIET_MS);
-          again.forEach((n) => own.add(n));
-          if (fresh.some((n) => !again.has(n))) {
-            reacts = true;
-            break;
-          }
         }
       }
       return { clickable: all.length > 0, reacts, no_errors: errors.length === before };

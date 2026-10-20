@@ -49,6 +49,23 @@ ANIMATION = """<!doctype html><html><body><ul>""" + "<li>x</li>" * 8 + """</ul>
 <button>a</button><button>b</button><button>c</button>
 <script>const items = document.querySelectorAll("li"); let i = 0;
 setInterval(() => { items[i % 8].classList.toggle("on"); i++; }, 60);</script></body></html>"""
+VS_COMPUTER = """<!doctype html><html><head><style>.pop{color:red}</style></head><body>
+<p id="s">your move</p><div id="b"></div>
+<script>const b = document.getElementById("b"), s = document.getElementById("s");
+for (let i = 0; i < 9; i++) { const c = document.createElement("button"); b.append(c);
+  c.addEventListener("click", () => {
+    if (c.textContent) return;
+    c.textContent = "X"; c.classList.add("pop"); s.textContent = "thinking";
+    setTimeout(() => c.classList.remove("pop"), 300);
+    setTimeout(() => { const free = [...b.children].find((x) => !x.textContent);
+      if (free) free.textContent = "O"; s.textContent = "your move"; }, 500);
+  }); }</script></body></html>"""
+RADIOS = """<!doctype html><html><body><label><input type="radio" name="m"> easy</label>
+<label><input type="radio" name="m"> hard</label></body></html>"""
+LABEL = """<!doctype html><html><body><input type="checkbox" id="x"><label for="x">sound</label>
+<script>document.addEventListener("click", () => {});</script></body></html>"""
+LATER_RELOAD = """<!doctype html><html><body><p>game</p>
+<button onclick="setTimeout(() => location.reload(), 0)">New game</button></body></html>"""
 SPLASH = """<!doctype html><html><body><p>loading</p><button>dead</button>
 <script>if (!sessionStorage.getItem("seen")) { sessionStorage.setItem("seen", "1");
   setTimeout(() => { location.href = "./?game"; }, 800); }</script></body></html>"""
@@ -221,9 +238,18 @@ class InChrome(unittest.TestCase):
             with self.subTest(page=name):
                 self.assertEqual(self.run_checks(page, "reacts_to_clicks")[0], ["reacts_to_clicks:reacts"])
 
-    def test_a_checkbox_alone_is_no_reaction(self):
-        # The browser toggles it without any script; only what the page does counts.
-        self.assertEqual(self.run_checks(PLAIN_CHECKBOX, "reacts_to_clicks")[0], ["reacts_to_clicks:reacts"])
+    def test_a_click_with_delayed_follow_ups_is_a_reaction(self):
+        # The cell flashes, the status changes and the computer answers later: still a reaction.
+        self.assertEqual(self.run_checks(VS_COMPUTER, "reacts_to_clicks")[0], [])
+
+    def test_inputs_the_browser_toggles_by_itself_are_no_reaction(self):
+        # A checkbox, a radio group or a label's checkbox change without any script.
+        for name, page in (("checkbox", PLAIN_CHECKBOX), ("radios", RADIOS), ("label", LABEL)):
+            with self.subTest(page=name):
+                self.assertEqual(self.run_checks(page, "reacts_to_clicks")[0], ["reacts_to_clicks:reacts"])
+
+    def test_a_reload_started_just_after_the_click_counts(self):
+        self.assertEqual(self.run_checks(LATER_RELOAD, "reacts_to_clicks")[0], [])
 
     def test_a_page_that_navigates_by_itself_is_no_reaction(self):
         self.assertEqual(self.run_checks(SPLASH, "reacts_to_clicks")[0], ["reacts_to_clicks:reacts"])
