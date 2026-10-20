@@ -20,9 +20,6 @@ from .github import GitHub, configure_repo, gh_env
 
 STATUSLINE_PY = Path(__file__).resolve().with_name("statusline.py")
 REPO_DIRNAME = "xyz"
-# The locale of every run, whatever the machine's: the operator's language must
-# not decide the language of the app Claude builds, nor the measurement.
-RUN_LOCALE = "en_US.UTF-8"
 
 
 def paths(lab_root: Path, test_id: str) -> SimpleNamespace:
@@ -59,9 +56,6 @@ def child_env(
     server alike: no run phones home, and no network call outside the task
     adds noise to the measurement.
 
-    The locale is RUN_LOCALE (LANG and LC_ALL); the machine's other LC_*
-    variables and LANGUAGE are dropped.
-
     `PLAYWRIGHT_MCP_ISOLATED=1` is the environment form of `@playwright/mcp`'s
     `--isolated`: an in-memory browser profile instead of a persistent one
     under the user's home directory, keyed by the work dir. Without it, the
@@ -70,10 +64,7 @@ def child_env(
     """
     sandbox_dir = (lab_root / "sandbox").resolve()
     env = gh_env(environ, cfg["GH_TOKEN"], sandbox_dir / ".gh")  # drops CLAUDE*/ANTHROPIC* too
-    env = {k: v for k, v in env.items() if not k.startswith("LC_") and k != "LANGUAGE"}
     env.update(
-        LANG=RUN_LOCALE,
-        LC_ALL=RUN_LOCALE,
         CLAUDE_CONFIG_DIR=str(config_dir),
         CLAUDE_CODE_OAUTH_TOKEN=cfg["CLAUDE_CODE_OAUTH_TOKEN"],
         GIT_CEILING_DIRECTORIES=str(sandbox_dir),
