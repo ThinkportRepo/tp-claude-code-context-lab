@@ -424,8 +424,12 @@ class ResetRepo(TempRoot):
 
     def test_gives_up_after_the_last_pause(self):
         gh = FakeGitHub(exists=False, create_fails=len(sandbox.RESET_PAUSES_S) + 1)
-        with self.assertRaises(sandbox.GitHubError):
-            self.reset_with_pauses(gh)
+        with mock.patch.object(sandbox, "configure_repo"), \
+             mock.patch.object(sandbox.time, "sleep") as sleep, redirect_stderr(io.StringIO()):
+            with self.assertRaises(sandbox.GitHubError):
+                sandbox.reset_repo(gh, "t1", self.p.repo, lab_root=self.lab_root)
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], list(sandbox.RESET_PAUSES_S))
+        self.assertEqual(len([c for c in gh.calls if c[0] == "create"]), len(sandbox.RESET_PAUSES_S) + 1)
 
     def test_a_retry_deletes_a_repo_the_failed_attempt_created(self):
         # GitHub may create the repo and still report an error; the retry starts from scratch.
