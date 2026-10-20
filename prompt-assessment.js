@@ -3,7 +3,7 @@
 // every run builds its own game: the board is an element with nine cells
 // (nine children, nine alike among a few others such as a win line, or else
 // three rows of three), and a cell's mark is its text, else its class, data
-// attributes, src or the same of its descendants.
+// attributes, src or alt, also of its descendants.
 //
 // O's moves may come from a second player or from the computer: if no other
 // cell is marked within 1.5 s of X's first move, the script plays O itself
@@ -75,7 +75,9 @@ window.labAssess = async (document) => {
   const seen = new Set(saved?.seen);
   const ended = () => status().some((line) => !seen.has(line) && RESULT.test(line));
 
-  if (saved) return { ...saved.steps, result: ended(), stops_after_end: true }; // reloaded at the end
+  if (saved) { // the page reloaded at the end: keep a result found before the reload
+    return { ...saved.steps, result: !!saved.steps.result || ended(), stops_after_end: true };
+  }
 
   if (!findBoard()[0]) return { board: false };
   const empty = cells().map(mark);
@@ -120,7 +122,17 @@ window.labAssess = async (document) => {
     await tick();
     result = ended();
   }
+  pending.steps.result = result;
+  save();
 
+  // A cell under something else (a result overlay, a board with pointer-events:
+  // none) cannot be clicked by a player, so the game has stopped there.
+  const covered = (cell) => {
+    cell.scrollIntoView({ block: "center" });
+    const box = cell.getBoundingClientRect();
+    const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return !!top && !cell.contains(top);
+  };
   // After the end, a free cell takes no mark, unless the game started over by itself.
   let restarted = false;
   for (let t = 0; !restarted && t < 20; t++) {
@@ -129,7 +141,7 @@ window.labAssess = async (document) => {
   }
   let stops_after_end = true;
   const open = free();
-  if (!restarted && open >= 0) {
+  if (!restarted && open >= 0 && !covered(cells()[open])) {
     const was = markAt(open);
     await move(open);
     stops_after_end = markAt(open) === was;
