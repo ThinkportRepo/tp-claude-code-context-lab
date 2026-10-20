@@ -297,6 +297,12 @@ class Secrets(Base):
         self.assertTrue(kwargs["capture_output"])
         self.assertNotIn(OAUTH_TOKEN, " ".join(argv))
 
+    def test_claude_check_uses_the_probe_model_from_the_config(self):
+        self.cfg["LAB_PROBE_MODEL"] = "claude-sonnet-5-5"
+        self.run_teardown(FakeGitHub(), secrets=True)
+        (argv, _), = self.claude_calls
+        self.assertEqual(argv[argv.index("--model") + 1], "claude-sonnet-5-5")
+
     def claude_not_verified(self):
         return (
             f"Could not verify that the Claude token {env.mask(OAUTH_TOKEN)} was revoked. Open {CLAUDE_URL}"
@@ -544,7 +550,7 @@ class Cli(unittest.TestCase):
 
     # setup
 
-    def setup_cmd(self, *, org_ok=True, chrome=True, probe=None, matrix=None):
+    def setup_cmd(self, *, org_ok=True, probe=None, matrix=None):
         calls = []
 
         def fake_run(argv, **kwargs):
@@ -555,7 +561,7 @@ class Cli(unittest.TestCase):
         gh.org_ok.return_value = org_ok
         with mock.patch.object(self.cli.github, "GitHub", return_value=gh), \
              mock.patch.object(self.cli.subprocess, "run", side_effect=fake_run), \
-             mock.patch.object(self.cli.preflight, "chrome_installed", return_value=chrome) as chrome_mock, \
+             mock.patch.object(self.cli.preflight, "chrome_installed") as chrome_mock, \
              mock.patch.object(self.cli.limits, "probe", return_value=probe) as probe_mock:
             if matrix is not None:
                 matrix_file = self.lab_root / "lab" / "matrix.conf"
@@ -581,43 +587,28 @@ class Cli(unittest.TestCase):
         self.assertIn("5-hour limit: 88 % left (7-day: 95 % left)", out)
         probe.assert_called_once()
 
-    def test_setup_warns_but_succeeds_without_chrome_for_dev_stack(self):
-        (code, out, err), calls, probe, chrome = self.setup_cmd(chrome=False)
+    def test_setup_leaves_chrome_to_the_preflight_check(self):
+        # prepare() stops every command that runs tests without Chrome; setup does not check again.
+        (code, _, _), _, _, chrome = self.setup_cmd()
         self.assertEqual(code, 0)
-        self.assertEqual(calls, [])
-        chrome.assert_called_once()
-        self.assertIn("warning:", err)
-        self.assertIn("Google Chrome", err)
-        self.assertIn("playwright", err)
-        self.assertNotIn("Google Chrome", out)
-        probe.assert_called_once()  # setup carries on
-
-    def test_setup_is_silent_when_chrome_is_installed(self):
-        (code, _, err), _, _, chrome = self.setup_cmd(chrome=True)
-        self.assertEqual(code, 0)
-        chrome.assert_called_once()
-        self.assertEqual(err, "")
-
-    def test_setup_does_not_check_chrome_without_dev_stack(self):
-        (code, _, err), calls, _, chrome = self.setup_cmd(chrome=False, matrix="test1 clean\n")
-        self.assertEqual(code, 0)
-        self.assertEqual(calls, [])
         chrome.assert_not_called()
-        self.assertEqual(err, "")
 
-    def test_setup_warns_without_chrome_for_dev_messy(self):
-        (code, _, err), calls, _, chrome = self.setup_cmd(chrome=False, matrix="test1 dev-messy\n")
+    def test_setup_prints_the_goal(self):
+        goal = self.lab_root / "prompt-goal.toml"
+        goal.write_text('[[check]]\ntype = "pages_live"\nwait_s = 30\n')
+        self.cli.GOAL_FILE = goal
+        (code, out, _), _, _, _ = self.setup_cmd()
         self.assertEqual(code, 0)
-        self.assertEqual(calls, [])
-        chrome.assert_called_once()
-        self.assertIn("Google Chrome", err)
-        self.assertIn("dev-messy", err)
-        self.assertNotIn("dev-stack", err)  # names the profiles in the matrix only
+        self.assertIn("Goal (prompt-goal.toml): pages_live (wait up to 30 s)", out)
 
-    def test_chrome_warning_states_the_verified_default(self):
-        (_, _, err), _, _, _ = self.setup_cmd(chrome=False)
-        self.assertIn("uses the installed Google Chrome (verified 2026-10-14)", err)
-        self.assertNotIn("expected to", err)
+    def test_setup_stops_on_a_bad_goal_file(self):
+        bad = self.lab_root / "prompt-goal.toml"
+        bad.write_text('[[check]]\ntype = "app_works"\n')
+        self.cli.GOAL_FILE = bad
+        (code, _, err), _, probe, _ = self.setup_cmd()
+        self.assertEqual(code, 1)
+        self.assertIn("unknown type 'app_works'", err)
+        probe.assert_not_called()
 
     def test_setup_prints_the_effort_of_a_test(self):
         matrix = "test1 clean prompt-well-defined.md claude-sonnet-5 medium\ntest2 clean\n"

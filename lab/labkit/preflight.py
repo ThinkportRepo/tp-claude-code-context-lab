@@ -27,13 +27,21 @@ def check(
     *,
     need_github: bool,
     need_node: bool,
+    need_chrome: bool,
     need_claude_token: bool = True,
     timeout_s: int,
     now: datetime,
     sandbox: Path,
     home: Path,
 ) -> tuple[list[str], list[str]]:
-    """Return (errors, warnings) for the current setup."""
+    """Return (errors, warnings) for the current setup.
+
+    `need_node` and `need_chrome` are for profiles with MCP servers: their
+    servers start through `npx`, and the playwright server drives Google
+    Chrome. Without `npx` the servers do not start; without Chrome the
+    browser tools fail. Either way a run would not fail but measure a
+    different session, so both are errors.
+    """
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -44,6 +52,13 @@ def check(
     for tool in tools:
         if not shutil.which(tool):
             errors.append(f"`{tool}` not found on PATH")
+
+    if need_chrome and not chrome_installed(home):
+        errors.append(
+            "Google Chrome is not installed, and lab/matrix.conf uses an MCP profile whose"
+            " playwright MCP server drives it (verified 2026-10-14); install Google Chrome"
+            " or remove the tests of that profile"
+        )
 
     if need_claude_token and not cfg.get("CLAUDE_CODE_OAUTH_TOKEN"):
         errors.append(f"CLAUDE_CODE_OAUTH_TOKEN is not set: {CLAUDE_HINT}")

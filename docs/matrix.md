@@ -16,11 +16,19 @@ id  profile  [prompt]  [model]  [effort]
   - `superpowers`: the `superpowers` skill plugin.
   - `dev-stack`: a typical developer setup: four plugins, two with MCP servers.
   - `dev-messy`: twelve plugins and nine more MCP servers, heavily overlapping.
+
+  `dev-stack` and `dev-messy` need Node.js (`npx` starts their MCP
+  servers) and Google Chrome (the playwright MCP server drives it).
+  Without `npx` the servers do not start; without Chrome the browser tools
+  fail. Either way a run does not fail but measures a different session,
+  so `setup`, `run` and `session` stop with an error if either is missing
+  while the matrix lists a test with one of these profiles, also when the
+  selected test uses another profile. A new profile with MCP servers
+  belongs in `MCP_PROFILES` in `lab.py`.
 - `prompt`: a file path relative to the lab root (the directory with
   `lab.py`). Without the column, or with `-`, the test uses
-  `prompt-simple.md`. A new prompt file must ask for the same task: the app
-  in the `xyz` directory, published with GitHub Pages, showing "Hello GitHub
-  Pages", linked in the About section. The goal check tests exactly that.
+  `prompt-simple.md`. [prompts-and-goal.md](prompts-and-goal.md)
+  describes the prompt files and the goal they have to match.
 - `model`: a model ID. Without the column, or with `-`, the test uses
   `LAB_MODEL` from `.env`, else `claude-haiku-5-5`.
 - `effort`: `low`, `medium`, `high`, `xhigh` or `max`, passed to Claude as
@@ -29,9 +37,12 @@ id  profile  [prompt]  [model]  [effort]
 Use `-` to skip a column and still fill a later one. An error in the file
 names the file and line.
 
+## Running tests
+
 Run one test with `python3 lab.py run <id>`, all tests with
 `python3 lab.py run all`. `REPEAT=n` in `.env`, or `--repeat n`, runs each
-test n times. `python3 lab.py report` summarizes all recorded runs.
+test n times. Each run adds a row to `results.csv` in the lab root;
+`python3 lab.py report` summarizes all recorded runs.
 
 Each example below is a complete `lab/matrix.conf`, so `run all` runs
 exactly its tests. To keep the existing tests, add the lines instead and

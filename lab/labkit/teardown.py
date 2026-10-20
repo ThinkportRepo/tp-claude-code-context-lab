@@ -143,7 +143,8 @@ def run(
         elif cfg.get("GH_TOKEN"):
             ok = _revoke_github(env_file, cfg["GH_TOKEN"]) and ok
         if cfg.get("CLAUDE_CODE_OAUTH_TOKEN"):
-            ok = _revoke_claude(env_file, cfg["CLAUDE_CODE_OAUTH_TOKEN"]) and ok
+            model = cfg.get("LAB_PROBE_MODEL") or limits.PROBE_MODEL
+            ok = _revoke_claude(env_file, cfg["CLAUDE_CODE_OAUTH_TOKEN"], model) and ok
         else:
             print("No Claude token stored.")
         if env_file.exists() and not env.load(env_file, {}):
@@ -250,7 +251,7 @@ def _github_token_check(token: str) -> str:
         return UNVERIFIED
 
 
-def _revoke_claude(env_file: Path, token: str) -> bool:
+def _revoke_claude(env_file: Path, token: str, model: str) -> bool:
     """Have the user revoke the token on claude.ai, test it, drop it from .env.
 
     True only if the test proves the token revoked; otherwise the user is
@@ -263,7 +264,7 @@ def _revoke_claude(env_file: Path, token: str) -> bool:
             input()
         except EOFError:
             pass
-    state = _claude_token_state(token)
+    state = _claude_token_state(token, model)
     masked = env.mask(token)
     if state == REVOKED:
         print(f"Claude token {masked}: revoked")
@@ -279,8 +280,8 @@ def _revoke_claude(env_file: Path, token: str) -> bool:
     return state == REVOKED
 
 
-def _claude_token_state(token: str) -> str:
-    """Try one minimal call with the old token: REVOKED, STILL_ACTIVE or UNVERIFIED.
+def _claude_token_state(token: str, model: str) -> str:
+    """Try one minimal call to `model` with the old token: REVOKED, STILL_ACTIVE or UNVERIFIED.
 
     Runs in a fresh, existing config dir, with no outside Claude, Anthropic
     or GitHub credential in the environment. Only an unambiguous
@@ -294,7 +295,7 @@ def _claude_token_state(token: str) -> str:
         child.update(CLAUDE_CONFIG_DIR=str(config_dir), CLAUDE_CODE_OAUTH_TOKEN=token)
         try:
             cp = subprocess.run(
-                headless_argv(limits.PROBE_PROMPT, limits.PROBE_MODEL),
+                headless_argv(limits.PROBE_PROMPT, model),
                 cwd=tmp,
                 env=child,
                 stdin=subprocess.DEVNULL,

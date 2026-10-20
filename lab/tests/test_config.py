@@ -1,4 +1,6 @@
+import contextlib
 import importlib.util
+import io
 import json
 import sys
 import tempfile
@@ -193,20 +195,6 @@ class Prompts(unittest.TestCase):
     def test_default_prompt_is_a_repo_file(self):
         self.assertTrue((REPO / config.DEFAULT_PROMPT).is_file())
 
-    def test_simple_prompt_text_is_pinned(self):
-        self.assertEqual(
-            config.prompt_text(REPO, "prompt-simple.md"),
-            'Create a simple "Hello GitHub Pages" app using the Git repository located in the `xyz` '
-            "directory. Publish it with GitHub Pages and link the site in the repository's About "
-            "section.\n",
-        )
-
-    def test_every_prompt_asks_for_the_about_link(self):
-        # The lab's goal includes the repo's About -> Website field, so each prompt must ask for it.
-        for name in ("prompt-simple.md", "prompt-well-defined.md"):
-            with self.subTest(prompt=name):
-                self.assertIn("About section", config.prompt_text(REPO, name))
-
     def test_prompt_text_rejects_missing_or_outside_files(self):
         for bad in ("poem.md", "simple", "lab", "../x.md"):
             with self.subTest(prompt=bad), self.assertRaises(ValueError):
@@ -218,10 +206,92 @@ class Prompts(unittest.TestCase):
             path.write_text("# comment\n\nfirst\n  # indented comment\nsecond  \n")
             self.assertEqual(config.load_followups(path), ["first", "second"])
 
-    def test_repo_followups(self):
-        lines = config.load_followups(REPO / "lab" / "prompts" / "followups.txt")
-        self.assertEqual(len(lines), 2)
-        self.assertTrue(lines[0].startswith("Go with your recommendation"))
+
+class Goal(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "prompt-goal.toml"
+
+    def load(self, text):
+        self.path.write_text(text)
+        return config.load_goal(self.path)
+
+    def assert_error(self, text, *parts):
+        with self.assertRaises(ValueError) as ctx:
+            self.load(text)
+        message = str(ctx.exception)
+        self.assertTrue(message.startswith(f"{self.path}:"), message)
+        for part in parts:
+            self.assertIn(part, message)
+
+    def test_both_checks(self):
+        goal = self.load(
+            '[[check]]\ntype = "pages_live"\nwait_s = 180\n\n[[check]]\ntype = "homepage_is_pages"\n'
+        )
+        self.assertEqual(goal, config.Goal(pages_live=True, homepage_is_pages=True, pages_wait_s=180))
+
+    def test_homepage_check_alone_waits_for_no_build(self):
+        goal = self.load('[[check]]\ntype = "homepage_is_pages"\n')
+        self.assertEqual(goal, config.Goal(pages_live=False, homepage_is_pages=True, pages_wait_s=0))
+
+    def test_pages_live_alone(self):
+        goal = self.load('[[check]]\ntype = "pages_live"\nwait_s = 0\n')
+        self.assertEqual(goal, config.Goal(pages_live=True, homepage_is_pages=False, pages_wait_s=0))
+
+    def test_missing_file_is_an_error(self):
+        with self.assertRaises(ValueError) as ctx:
+            config.load_goal(self.path)
+        self.assertIn("not found", str(ctx.exception))
+
+    def test_invalid_toml_names_the_line(self):
+        self.assert_error('[[check]]\ntype = \n', "line 2")
+
+    def test_no_check_is_an_error(self):
+        for text in ("", "check = []\n"):
+            with self.subTest(text=text):
+                self.assert_error(text, "at least one [[check]]")
+
+    def test_unknown_top_level_key(self):
+        self.assert_error('goal = "x"\n[[check]]\ntype = "homepage_is_pages"\n', "unknown key 'goal'")
+
+    def test_unknown_type_lists_the_known_ones(self):
+        self.assert_error('[[check]]\ntype = "app_works"\n', "check 1", "'app_works'", "pages_live")
+
+    def test_missing_type(self):
+        self.assert_error('[[check]]\nwait_s = 1\n', "check 1", "type")
+
+    def test_type_that_is_not_a_string(self):
+        for text in ('[[check]]\ntype = ["pages_live"]\n', "check = [1]\n"):
+            with self.subTest(text=text):
+                self.assert_error(text, "check 1", "type")
+
+    def test_unknown_field(self):
+        self.assert_error(
+            '[[check]]\ntype = "homepage_is_pages"\nwait_s = 5\n', "check 1", "unknown key 'wait_s'"
+        )
+
+    def test_pages_live_needs_a_wait(self):
+        for wait in ("", "wait_s = -1\n", "wait_s = 1.5\n", 'wait_s = "180"\n', "wait_s = true\n"):
+            with self.subTest(wait=wait):
+                self.assert_error(f'[[check]]\ntype = "pages_live"\n{wait}', "check 1", "wait_s")
+
+    def test_duplicate_type(self):
+        self.assert_error(
+            '[[check]]\ntype = "homepage_is_pages"\n[[check]]\ntype = "homepage_is_pages"\n',
+            "check 2", "duplicate",
+        )
+
+    def test_repo_goal_file_is_valid(self):
+        # Only that it loads: which checks the scenario uses is up to the file.
+        config.load_goal(REPO / config.GOAL_FILE)
+
+    def test_describe(self):
+        both = config.Goal(pages_live=True, homepage_is_pages=True, pages_wait_s=180)
+        self.assertEqual(config.describe_goal(both), "pages_live (wait up to 180 s), homepage_is_pages")
+        self.assertEqual(
+            config.describe_goal(config.Goal(pages_live=False, homepage_is_pages=True)), "homepage_is_pages"
+        )
 
 
 class Profiles(unittest.TestCase):
@@ -371,19 +441,33 @@ class CliWiring(TempLab):
         spec.loader.exec_module(module)
         return module
 
-    def needs_node(self, text):
+    def uses_mcp(self, text):
         cli = self.load_lab_module()
         self.matrix.write_text(text)
         with mock.patch.object(cli, "MATRIX_FILE", self.matrix):
-            return cli.matrix_needs_node()
+            return cli.matrix_uses_mcp()
 
-    def test_need_node_only_with_an_mcp_profile_in_matrix(self):
-        self.assertFalse(self.needs_node("test1 clean prompt-simple.md\ntest2 superpowers prompt-simple.md\n"))
-        self.assertTrue(self.needs_node("test1 clean prompt-simple.md\ntest2 dev-stack prompt-simple.md\n"))
-        self.assertTrue(self.needs_node("test1 clean prompt-simple.md\ntest2 dev-messy prompt-simple.md\n"))
+    def test_mcp_only_with_an_mcp_profile_in_matrix(self):
+        self.assertFalse(self.uses_mcp("test1 clean prompt-simple.md\ntest2 superpowers prompt-simple.md\n"))
+        self.assertTrue(self.uses_mcp("test1 clean prompt-simple.md\ntest2 dev-stack prompt-simple.md\n"))
+        self.assertTrue(self.uses_mcp("test1 clean prompt-simple.md\ntest2 dev-messy prompt-simple.md\n"))
 
-    def test_repo_matrix_needs_node(self):
-        self.assertTrue(self.load_lab_module().matrix_needs_node())
+    def test_repo_matrix_uses_mcp(self):
+        self.assertTrue(self.load_lab_module().matrix_uses_mcp())
+
+    def test_run_and_session_stop_on_a_missing_goal_file(self):
+        cli = self.load_lab_module()
+        cfg = {"LAB_GH_ORG": "org", "GH_TOKEN": "ghp_x"}
+        for name, call in (("run", lambda: cli.run_tests(cfg, "all", 1)),
+                           ("session", lambda: cli.run_session(cfg, "test1", True))):
+            err = io.StringIO()
+            with self.subTest(command=name), \
+                 mock.patch.object(cli, "GOAL_FILE", self.lab_root / "prompt-goal.toml"), \
+                 mock.patch.object(cli.github, "GitHub") as gh, \
+                 contextlib.redirect_stderr(err):
+                self.assertEqual(call(), 1)
+                gh.assert_not_called()
+                self.assertIn("prompt-goal.toml: not found", err.getvalue())
 
     def test_tokens_command_ignores_broken_matrix(self):
         cli = self.load_lab_module()

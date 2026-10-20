@@ -30,6 +30,7 @@ CFG = {"CLAUDE_CODE_OAUTH_TOKEN": OAUTH_TOKEN, "GH_TOKEN": GH_TOKEN, "LAB_GH_ORG
 PROMPT = "Build a page that says Hello GitHub Pages.\n"
 FOLLOWUPS = ["First follow-up.", "Second follow-up."]
 PLUGIN = "superpowers@claude-plugins-official"
+GOAL = config.Goal(pages_live=True, homepage_is_pages=True, pages_wait_s=180)
 
 
 class FakeGitHub:
@@ -46,6 +47,7 @@ class FakeGitHub:
         self.goal_ok_raises = goal_ok_raises
         self.create_delay = create_delay
         self.calls = []
+        self.checks = []  # the (live, homepage) flags of each goal_ok call
 
     def git_env(self):
         return github.gh_env(os.environ, self.token, Path(os.devnull))
@@ -70,8 +72,9 @@ class FakeGitHub:
             return self.statuses.pop(0) if len(self.statuses) > 1 else self.statuses[0]
         return self.status
 
-    def goal_ok(self, name, text, wait_s):
-        self.calls.append(("goal_ok", name, text, wait_s))
+    def goal_ok(self, name, wait_s, *, live, homepage):
+        self.calls.append(("goal_ok", name, wait_s))
+        self.checks.append((live, homepage))
         if self.goal_ok_raises:
             raise self.goal_ok_raises
         return self.goal_ok_results.pop(0) if self.goal_ok_results else False
@@ -151,6 +154,7 @@ class FakeClaude(unittest.TestCase):
 
     def run_headless(self, gh, test=None, **kwargs):
         kwargs.setdefault("limit_start", 12)
+        kwargs.setdefault("goal", GOAL)
         with redirect_stdout(self.out), redirect_stderr(self.err):
             return runner.run_headless(self.lab_root, test or self.test, CFG, gh, **kwargs)
 
@@ -188,6 +192,12 @@ class Probe(FakeClaude):
         self.assertEqual(limits.probe(self.lab_root, CFG), {"five_hour_pct": 12, "seven_day_pct": 5})
         (call,) = self.p_calls()
         self.assertEqual(call["argv"][call["argv"].index("-p") + 1], "Reply with OK")
+
+    def test_probe_model_default_and_from_the_config(self):
+        limits.probe(self.lab_root, CFG)
+        limits.probe(self.lab_root, CFG | {"LAB_PROBE_MODEL": "claude-sonnet-5-5"})
+        models = [c["argv"][c["argv"].index("--model") + 1] for c in self.p_calls()]
+        self.assertEqual(models, ["claude-haiku-5-5", "claude-sonnet-5-5"])
 
     def test_probe_none_when_call_fails(self):
         os.environ["FAKE_CLAUDE_NO_TRANSCRIPT"] = "1"
@@ -295,7 +305,7 @@ class HeadlessRun(FakeClaude):
         self.assertEqual(argv[argv.index("--resume") + 1], SESSION)
         self.assertEqual(argv[argv.index("-p") + 1], FOLLOWUPS[0])
         self.assertEqual(row["status"], "ok")
-        waits = [c[3] for c in gh.calls if c[0] == "goal_ok"]
+        waits = [c[2] for c in gh.calls if c[0] == "goal_ok"]
         self.assertEqual(waits, [0, 0])
 
     def test_followups_stop_when_none_left(self):
@@ -305,20 +315,39 @@ class HeadlessRun(FakeClaude):
         self.assertEqual(row["status"], "failed")
         self.assertIs(row["goal_ok"], False)
         # Pages was never configured: no 180 s wait for a build that cannot come.
-        self.assertEqual([c[3] for c in gh.calls if c[0] == "goal_ok"], [0, 0, 0])
+        self.assertEqual([c[2] for c in gh.calls if c[0] == "goal_ok"], [0, 0, 0])
 
     def test_final_wait_when_pages_appears_after_the_last_turn(self):
         gh = FakeGitHub(goal_ok=[], pages_statuses=[None, None, None, {"status": "building"}])
         self.run_headless(gh)
         # The last check gives a just-configured site the full build time before the verdict.
-        self.assertEqual([c[3] for c in gh.calls if c[0] == "goal_ok"], [0, 0, 0, 180])
+        self.assertEqual([c[2] for c in gh.calls if c[0] == "goal_ok"], [0, 0, 0, 180])
 
     def test_no_followup_while_pages_building(self):
         gh = FakeGitHub(goal_ok=[True], pages_status={"status": "building"})
         row = self.run_headless(gh)
         self.assertEqual(len(self.p_calls()), 1)
-        self.assertIn(("goal_ok", "lab-test1", "Hello GitHub Pages", 180), gh.calls)
+        self.assertIn(("goal_ok", "lab-test1", 180), gh.calls)
         self.assertEqual(row["status"], "ok")
+
+    def test_goal_checks_reach_every_goal_check(self):
+        gh = FakeGitHub(goal_ok=[False, True])
+        self.run_headless(gh, goal=config.Goal(pages_live=False, homepage_is_pages=True))
+        self.assertEqual(gh.checks, [(False, True), (False, True)])
+
+    def test_pages_wait_comes_from_the_goal(self):
+        gh = FakeGitHub(goal_ok=[True], pages_status={"status": "building"})
+        self.run_headless(gh, goal=config.Goal(pages_live=True, homepage_is_pages=False, pages_wait_s=30))
+        self.assertEqual([c[2] for c in gh.calls if c[0] == "goal_ok"], [30])
+        self.assertEqual(gh.checks, [(True, False)])
+        self.assertIn("waiting up to 30 s", self.out.getvalue())
+
+    def test_no_build_wait_without_pages_live(self):
+        gh = FakeGitHub(goal_ok=[], pages_status={"status": "building"})
+        self.run_headless(gh, goal=config.Goal(pages_live=False, homepage_is_pages=True))
+        # One check per turn and no final wait: the goal does not wait for a build.
+        self.assertEqual([c[2] for c in gh.calls if c[0] == "goal_ok"], [0, 0, 0])
+        self.assertNotIn("waiting up to", self.out.getvalue())
 
     def test_timeout_recorded(self):
         os.environ["FAKE_CLAUDE_SLEEP"] = "5"
@@ -555,6 +584,7 @@ class Interactive(FakeClaude):
 
     def run_interactive(self, gh, test=None, **kwargs):
         kwargs.setdefault("limit_start", 12)
+        kwargs.setdefault("goal", GOAL)
         with redirect_stdout(self.out), redirect_stderr(self.err):
             return runner.run_interactive(self.lab_root, test or self.test, CFG, gh, **kwargs)
 
@@ -572,17 +602,23 @@ class Interactive(FakeClaude):
         self.assertEqual(row["status"], "ok")
         self.assertIs(row["goal_ok"], True)
         self.assertEqual(set(row), set(results.FIELDS))
-        self.assertIn(("goal_ok", "lab-test1", "Hello GitHub Pages", 180), gh.calls)
+        self.assertIn(("goal_ok", "lab-test1", 180), gh.calls)
         (csv_row,) = self.csv_rows()
         self.assertEqual((csv_row["mode"], csv_row["ctx_start"]), ("interactive", "31115"))
         run_dir = self.lab_root / "sandbox" / "test1" / "results" / row["timestamp"]
         self.assertTrue((run_dir / "statusline.json").is_file())
         self.assertTrue(any((run_dir / "projects").glob("*/*.jsonl")))
 
+    def test_interactive_uses_the_goal(self):
+        gh = FakeGitHub(goal_ok=[True], pages_status={"status": "building"})
+        self.run_interactive(gh, goal=config.Goal(pages_live=True, homepage_is_pages=False, pages_wait_s=30))
+        self.assertEqual([c[2] for c in gh.calls if c[0] == "goal_ok"], [30])
+        self.assertEqual(gh.checks, [(True, False)])
+
     def test_no_pages_wait_when_pages_was_never_configured(self):
         gh = FakeGitHub(goal_ok=[False])
         row = self.run_interactive(gh)
-        self.assertEqual([c[3] for c in gh.calls if c[0] == "goal_ok"], [0])
+        self.assertEqual([c[2] for c in gh.calls if c[0] == "goal_ok"], [0])
         self.assertNotIn("waiting up to", self.out.getvalue())
         self.assertEqual(row["status"], "failed")
 
@@ -701,6 +737,22 @@ class RunCommand(unittest.TestCase):
             self.assertEqual(call.kwargs["limit_start"], 12)
         self.assertEqual(out.count("88 % left"), 2)
 
+    def test_run_passes_the_goal_file_and_the_timeout(self):
+        code, run, _, _ = self.run_tests({"LAB_RUN_TIMEOUT_S": "600"}, {"five_hour_pct": 12, "seven_day_pct": 5})
+        self.assertEqual(code, 0)
+        (call,) = run.call_args_list
+        self.assertEqual(call.kwargs["goal"], config.load_goal(REPO / config.GOAL_FILE))
+        self.assertEqual(call.kwargs["timeout_s"], 600)
+
+    def test_gate_threshold_from_config(self):
+        # 85 % left: enough by default, too little with LAB_LIMIT_MIN_PCT=90.
+        probe = {"five_hour_pct": 15, "seven_day_pct": 5}
+        self.assertEqual(self.run_tests({}, probe)[0], 0)
+        code, run, out, _ = self.run_tests({"LAB_LIMIT_MIN_PCT": "90"}, probe)
+        self.assertEqual(code, 1)
+        run.assert_not_called()
+        self.assertIn("skipping test1", out)
+
     def test_run_stops_on_runtime_error(self):
         cli = load_cli()
         err = io.StringIO()
@@ -801,7 +853,9 @@ class SessionCommand(unittest.TestCase):
         self.assertIn("88 % left", out)
         (call,) = run.call_args_list
         self.assertEqual(call.args[1].model, "claude-sonnet-x")
-        self.assertEqual(call.kwargs, {"limit_start": 12, "prompt": True})
+        self.assertEqual(
+            call.kwargs, {"goal": config.load_goal(REPO / config.GOAL_FILE), "limit_start": 12, "prompt": True}
+        )
         self.assertIn("test1: ok · ctx_start 31115", out)
 
     def test_session_no_prompt_passes_through_and_prints_no_summary(self):

@@ -165,20 +165,28 @@ class GitHub:
             name, wait_s, lambda url: True if _page_shows(url, text) else None
         )
 
-    def goal_ok(self, name: str, text: str, wait_s: int) -> bool:
+    def goal_ok(self, name: str, wait_s: int, *, live: bool, homepage: bool) -> bool:
         """Is the lab's goal met? Poll up to wait_s (every 10 s) only until the site is live.
 
-        The goal: the Pages site is live and shows text, and the repo's About
-        -> Website field links to it. Waiting is for the deployment only (no
-        Pages yet, still building, text not shown yet). Once the page shows
-        the text the answer is final: the link comes from an agent action and
-        does not appear on its own, so a missing or different homepage is
-        False right away.
+        The checks are those of the goal file (`config.Goal`): `live`, the
+        Pages site answers 200, and `homepage`, the repo's About -> Website
+        field links to it. What the page shows is never checked. Waiting is
+        for the deployment only (no Pages yet, still building, not answering
+        yet). Once the page answers the answer is final: the link comes from
+        an agent action and does not appear on its own, so a missing or
+        different homepage is False right away. Without `live` there is
+        nothing to wait for: the Pages URL exists as soon as Pages is
+        configured, so the homepage is compared at once and wait_s is unused.
         """
+        if not live:
+            status = self.pages_status(name)
+            url = status.get("html_url") if status else None
+            return bool(url) and (_same_site(self.homepage(name), url) if homepage else True)
+
         def decide(url: str) -> bool | None:
-            if not _page_shows(url, text):
+            if not _page_live(url):
                 return None  # not live yet: keep polling
-            return _same_site(self.homepage(name), url)
+            return _same_site(self.homepage(name), url) if homepage else True
 
         return self._poll_pages(name, wait_s, decide)
 
@@ -235,6 +243,11 @@ def _same_site(homepage: str | None, html_url: str) -> bool:
     """
     key = _site_key(homepage or "")
     return bool(key) and key == _site_key(html_url)
+
+
+def _page_live(url: str) -> bool:
+    """True if GET url answers 200, whatever the body; see _page_shows."""
+    return _page_shows(url, "")
 
 
 def _page_shows(url: str, text: str) -> bool:

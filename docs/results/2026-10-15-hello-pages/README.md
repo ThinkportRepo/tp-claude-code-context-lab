@@ -7,7 +7,12 @@
 > token counts and the effect of profiles, prompts, models and effort can
 > be completely different.
 
-Raw data: [results-2026-10-15.csv](results-2026-10-15.csv), 72 runs.
+Raw data: [results.csv](results.csv), 72 runs; the pilot runs before
+them: [results-pilot.csv](results-pilot.csv). The prompts used:
+[prompt-simple.md](prompt-simple.md),
+[prompt-well-defined.md](prompt-well-defined.md); the follow-ups:
+[followups.txt](followups.txt). The goal predates
+`prompt-goal.toml` and is described under Setup.
 
 ## Setup
 
@@ -15,14 +20,15 @@ Raw data: [results-2026-10-15.csv](results-2026-10-15.csv), 72 runs.
   Pages and set the About link. Goal reached = the site shows "Hello
   GitHub Pages" and the About link points to it.
 - If the goal is not met after the prompt, the runner resumes the session
-  with up to two follow-up prompts (`lab/prompts/followups.txt`). All
+  with up to two follow-up prompts ([followups.txt](followups.txt)). All
   values include these turns. 12 runs used them: the 8 failures, the
   other 2 Sonnet runs with the simple prompt, and 2 Haiku runs.
-- Matrix: the four examples in [matrix.md](matrix.md), three runs per
+- Matrix: the four examples in [matrix.md](../../matrix.md), three runs per
   test, all headless.
 - Series 1 (ids `test-*`) ran the examples as in matrix.md. Series 2 (ids
-  `test2-*`) ran examples 1–3 with `prompt-well-defined.md` instead of the
-  default `prompt-simple.md`; example 4 ran unchanged.
+  `test2-*`) ran examples 1–3 with `prompt-well-defined.md` instead of
+  `prompt-simple.md` (both as copied in this folder); example 4 ran
+  unchanged.
 - Tests with identical settings in different examples are grouped. The
   baseline (`clean`, Haiku, `low`) has n = 15 per prompt; every other row
   has n = 3.

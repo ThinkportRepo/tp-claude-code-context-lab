@@ -77,6 +77,7 @@ class TestResultsFile(unittest.TestCase):
         message = str(ctx.exception)
         self.assertIn(str(self.path), message)
         self.assertIn("results-", message)  # where to move the old file
+        self.assertNotIn("git ignores", message)  # .gitignore covers results.csv only
         self.assertEqual(self.path.read_text(), old)  # nothing appended
 
     def test_append_accepts_an_empty_file(self):

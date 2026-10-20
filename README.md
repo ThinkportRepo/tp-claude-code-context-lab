@@ -11,8 +11,9 @@ guesses.
 - Python 3.11 or newer (standard library only)
 - `git` and the GitHub CLI (`gh`)
 - A new, empty GitHub organization in which you are an admin
-- Node.js with `npx` and Google Chrome, for the `dev-stack` and
-  `dev-messy` profiles
+- Node.js with `npx` and Google Chrome, while `lab/matrix.conf` lists a
+  test with the `dev-stack` or `dev-messy` profile; `setup`, `run` and
+  `session` stop without them, also for a test of another profile
 
 ## Quick start
 
@@ -91,6 +92,9 @@ test9    clean        prompt-simple.md        claude-sonnet-5   medium
 ```
 
 [docs/matrix.md](docs/matrix.md) describes the columns and has examples.
+[docs/prompts-and-goal.md](docs/prompts-and-goal.md) describes the prompt
+files, the follow-ups and `prompt-goal.toml`, the goal every test is
+checked against.
 
 ## Contributing and security
 

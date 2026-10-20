@@ -1,7 +1,8 @@
 """One recorded run of a test: reset, `claude` turns, goal check, collect.
 
-The goal: the GitHub Pages site shows PAGES_TEXT and the repo's About ->
-Website field links to it (`GitHub.goal_ok`).
+The goal comes from the goal file (`config.load_goal`, `prompt-goal.toml`)
+and is checked by `GitHub.goal_ok`. Whether the app works is not part of
+the goal.
 
 `run_headless` drives `claude -p`; `run_interactive` hands the terminal to
 a human. Every run appends exactly one row to `<lab_root>/results.csv`, also
@@ -24,12 +25,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from . import config, metrics, results, sandbox
-from .github import S5_TEXT, GitHub
+from .github import GitHub
 
 RUN_TIMEOUT_S = 1200
 KILL_GRACE_S = 5  # after SIGTERM, before SIGKILL
-PAGES_TEXT = S5_TEXT  # "Hello GitHub Pages"
-PAGES_WAIT_S = 180
 FOLLOWUPS_FILE = Path("lab") / "prompts" / "followups.txt"
 STATUS_FILE = "statusline.json"
 RESULTS_FILE = "results.csv"
@@ -209,6 +208,20 @@ def statusline_limit(path: Path) -> int | None:
     return round(data)
 
 
+def _goal_ok(test: config.Test, gh: GitHub, goal: config.Goal, wait_s: int) -> bool:
+    """Check `goal` for the test's repo, waiting up to wait_s for a Pages build."""
+    if wait_s:
+        print(f"{test.id}: waiting up to {wait_s} s for the GitHub Pages site to go live")
+    return gh.goal_ok(f"lab-{test.id}", wait_s, live=goal.pages_live, homepage=goal.homepage_is_pages)
+
+
+def _build_wait(test: config.Test, gh: GitHub, goal: config.Goal) -> int:
+    """The goal's Pages wait if Pages is configured; without Pages there is no build to wait for."""
+    if not goal.pages_wait_s or gh.pages_status(f"lab-{test.id}") is None:
+        return 0
+    return goal.pages_wait_s
+
+
 def _status(*, failed: bool, timed_out: bool, goal_ok: bool | None, denied: bool | None) -> str:
     if failed:
         return "failed"
@@ -227,22 +240,23 @@ def run_headless(
     cfg: dict[str, str],
     gh: GitHub,
     *,
+    goal: config.Goal,
     limit_start: int | None,
     timeout_s: int = RUN_TIMEOUT_S,
 ) -> dict:
     """Run `test` headless (lifecycle steps 3–7) and return its results row.
 
-    Turn 1 sends the prompt; while the goal is not met and follow-up lines
+    Turn 1 sends the prompt; while `goal` is not met and follow-up lines
     are left, the session is resumed with the next line. Once Pages is
-    configured the runner waits up to PAGES_WAIT_S for the build before it
-    decides, so a deployment in progress never triggers a follow-up.
+    configured the runner waits up to the goal's `pages_wait_s` for the
+    build before it decides, so a deployment in progress never triggers a
+    follow-up.
     `timeout_s` is the budget for the run; each `claude` process gets what
     is left of it. The clock (budget and `duration_s`) starts right before
     turn 1, as in an interactive session, so neither plugin installation
     nor the repo reset counts against a profile.
     """
     started = deadline = None
-    name = f"lab-{test.id}"
     stamp = datetime.now(timezone.utc).strftime(results.TIMESTAMP_FORMAT)
     p = sandbox.paths(lab_root, test.id)
     out_dir = p.results / stamp  # its name is the row's timestamp
@@ -281,19 +295,18 @@ def run_headless(
         deadline = started + timeout_s
         session = turn(config.prompt_text(lab_root, test.prompt), None, env)
         while True:
-            wait_s = PAGES_WAIT_S if gh.pages_status(name) is not None else 0
-            if wait_s:
-                print(f"{test.id}: waiting up to {wait_s} s for the GitHub Pages site to go live")
-            goal_ok = gh.goal_ok(name, PAGES_TEXT, wait_s=wait_s)
+            wait_s = _build_wait(test, gh, goal)
+            goal_ok = _goal_ok(test, gh, goal, wait_s)
             if goal_ok or not followups or not session:
                 break
             print(f"{test.id}: follow-up {len(streams)}")
             session = turn(followups.pop(0), session, env)
-        if not goal_ok and not wait_s and gh.pages_status(name) is not None:
+        if not goal_ok and not wait_s:
             # Final verification: give a site configured in the last turn its
             # build time. Without Pages at all there is nothing to wait for.
-            print(f"{test.id}: waiting up to {PAGES_WAIT_S} s for the GitHub Pages site to go live")
-            goal_ok = gh.goal_ok(name, PAGES_TEXT, wait_s=PAGES_WAIT_S)
+            final_wait_s = _build_wait(test, gh, goal)
+            if final_wait_s:
+                goal_ok = _goal_ok(test, gh, goal, final_wait_s)
     except _RunTimeout:
         timed_out = True
         print(f"{test.id}: timed out after {timeout_s} s")
@@ -345,6 +358,7 @@ def run_interactive(
     cfg: dict[str, str],
     gh: GitHub,
     *,
+    goal: config.Goal,
     limit_start: int | None,
     prompt: bool = True,
 ) -> dict | None:
@@ -352,7 +366,7 @@ def run_interactive(
 
     Same reset as headless (fresh config with plugins, empty repo), then
     `claude <prompt> --model M [--effort E] --permission-mode default` until the human
-    exits. Afterwards: goal check, metrics, row (`mode` interactive).
+    exits. Afterwards: `goal` check, metrics, row (`mode` interactive).
     `limit_5h_end_pct` comes from the status line the session saved.
     `duration_s` is the session's wall time. Status is `ok` if the goal is met,
     else `failed`: there is no timeout and no denial count interactively.
@@ -382,12 +396,7 @@ def run_interactive(
             print(f"{test.id}: claude exited {code}", file=sys.stderr)
         if not prompt:
             return None
-        # Without Pages there is no build to wait for.
-        name = f"lab-{test.id}"
-        wait_s = PAGES_WAIT_S if gh.pages_status(name) is not None else 0
-        if wait_s:
-            print(f"{test.id}: waiting up to {wait_s} s for the GitHub Pages site to go live")
-        goal_ok = gh.goal_ok(name, PAGES_TEXT, wait_s=wait_s)
+        goal_ok = _goal_ok(test, gh, goal, _build_wait(test, gh, goal))
     except BaseException:
         failed = True
         raise

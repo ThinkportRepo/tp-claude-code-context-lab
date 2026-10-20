@@ -444,21 +444,22 @@ class Homepage(GitHubClient):
 
 
 class GoalOk(TempDirCase):
-    """goal_ok: the Pages site shows the text AND the About -> Website field links to it."""
+    """goal_ok: the Pages site is live AND the About -> Website field links to it."""
 
     URL = PagesOk.URL
     make = PagesOk.make
     page = staticmethod(PagesOk.page)
     http_404 = PagesOk.http_404
 
-    def goal(self, statuses, fetches, homepages, wait_s=0):
+    def goal(self, statuses, fetches, homepages, wait_s=0, **checks):
         """Run goal_ok with scripted statuses, HTTP outcomes and homepages; return (result, sleeps)."""
         gh = self.make()
+        checks = {"live": True, "homepage": True} | checks
         with mock.patch.object(gh, "pages_status", side_effect=iter(statuses)), \
              mock.patch.object(gh, "homepage", side_effect=iter(homepages)), \
              mock.patch.object(github.time, "sleep") as sleep, \
              mock.patch.object(github.urllib.request, "urlopen", side_effect=iter(fetches)):
-            result = gh.goal_ok("lab-x", "Hello GitHub Pages", wait_s)
+            result = gh.goal_ok("lab-x", wait_s, **checks)
         return result, sleep.call_count
 
     def live(self, url=None):
@@ -480,7 +481,7 @@ class GoalOk(TempDirCase):
                 result = self.goal([self.live(html_url)], [self.page()], [homepage])
                 self.assertEqual(result, (True, 0))
 
-    def test_missing_homepage_is_not_ok_even_if_the_page_shows_the_text(self):
+    def test_missing_homepage_is_not_ok_even_if_the_page_is_live(self):
         for homepage in (None, ""):
             with self.subTest(homepage=homepage):
                 self.assertEqual(self.goal([self.live()], [self.page()], [homepage]), (False, 0))
@@ -495,10 +496,14 @@ class GoalOk(TempDirCase):
     def test_missing_page_is_not_ok_even_with_the_homepage_set(self):
         self.assertEqual(self.goal([None], [], [self.URL]), (False, 0))
         self.assertEqual(self.goal([self.live()], [self.http_404()], [self.URL]), (False, 0))
-        self.assertEqual(self.goal([self.live()], [self.page(b"<h1>other</h1>")], [self.URL]), (False, 0))
+
+    def test_any_page_content_counts(self):
+        for body in (b"<h1>TIC TAC TOE</h1>", b"<h1>other</h1>", b""):
+            with self.subTest(body=body):
+                self.assertEqual(self.goal([self.live()], [self.page(body)], [self.URL]), (True, 0))
 
     def test_missing_homepage_is_decided_without_waiting(self):
-        # The page already shows the text: the About link only comes from an agent action, so
+        # The page is already live: the About link only comes from an agent action, so
         # waiting for it would be pointless. One poll, no sleep, even with a long budget.
         for homepage in (None, "", "https://example.com/"):
             with self.subTest(homepage=homepage):
@@ -506,7 +511,7 @@ class GoalOk(TempDirCase):
                 self.assertEqual(result, (False, 0))
 
     def test_waits_for_the_page_and_decides_once_it_is_live(self):
-        # Poll 1: no Pages site yet. Poll 2 (after 10 s): live, shows the text, homepage set.
+        # Poll 1: no Pages site yet. Poll 2 (after 10 s): live, homepage set.
         result = self.goal([None, self.live()], [self.page()], [self.URL], 180)
         self.assertEqual(result, (True, 1))
 
@@ -515,10 +520,28 @@ class GoalOk(TempDirCase):
         result = self.goal([building, self.live()], [self.page()], [None], 180)
         self.assertEqual(result, (False, 1))
 
-    def test_waits_while_the_page_does_not_show_the_text_then_gives_up(self):
-        stale = self.page(b"<h1>other</h1>")
-        result = self.goal([self.live()] * 3, [stale] * 3, [], 20)
+    def test_waits_while_the_page_does_not_answer_then_gives_up(self):
+        result = self.goal([self.live()] * 3, [self.http_404() for _ in range(3)], [], 20)
         self.assertEqual(result, (False, 2))
+
+    def test_without_the_live_check_the_page_is_not_fetched(self):
+        # No fetch is scripted: fetching would raise StopIteration.
+        self.assertEqual(self.goal([self.live()], [], [self.URL], live=False), (True, 0))
+        self.assertEqual(self.goal([self.live()], [], ["https://example.com/"], live=False), (False, 0))
+
+    def test_without_the_live_check_a_building_site_is_decided_by_its_url(self):
+        # The Pages URL exists as soon as Pages is configured; the build does not matter.
+        building = {"build_type": "legacy", "status": "building", "html_url": self.URL}
+        self.assertEqual(self.goal([building], [], [self.URL], live=False), (True, 0))
+        self.assertEqual(self.goal([building], [], [None], live=False), (False, 0))
+
+    def test_without_the_live_check_no_pages_is_not_ok(self):
+        self.assertEqual(self.goal([None], [], [], 180, live=False), (False, 0))
+
+    def test_without_the_homepage_check_a_live_page_is_enough(self):
+        # No homepage is scripted: reading it would raise StopIteration.
+        self.assertEqual(self.goal([self.live()], [self.page()], [], homepage=False), (True, 0))
+        self.assertEqual(self.goal([self.live()], [self.http_404()], [], homepage=False), (False, 0))
 
     def test_host_is_compared_case_insensitively_but_the_path_is_not(self):
         upper = "https://MyOrg.GitHub.io/lab-test1/"
