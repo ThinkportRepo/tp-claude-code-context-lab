@@ -42,7 +42,9 @@ names the file and line.
 Run one test with `python3 lab.py run <id>`, all tests with
 `python3 lab.py run all`. `REPEAT=n` in `.env`, or `--repeat n`, runs each
 test n times. Each run adds a row to `results.csv` in the lab root;
-`python3 lab.py report` summarizes all recorded runs.
+`python3 lab.py report` summarizes all recorded runs. Every run uses the
+English locale `en_US.UTF-8`, whatever the machine's, so the operator's
+language does not decide the language of the app Claude builds.
 
 Each example below is a complete `lab/matrix.conf`, so `run all` runs
 exactly its tests. To keep the existing tests, add the lines instead and

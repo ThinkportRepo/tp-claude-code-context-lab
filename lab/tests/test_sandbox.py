@@ -182,6 +182,16 @@ class ChildEnv(TempRoot):
         # In-memory browser profile: covers the playwright plugin's server, whose args the lab cannot set.
         self.assertEqual(self.env({"PATH": "/bin"})["PLAYWRIGHT_MCP_ISOLATED"], "1")
 
+    def test_child_env_uses_a_fixed_english_locale(self):
+        # The operator's locale must not decide the language of the app Claude builds.
+        env = self.env({"LANG": "de_DE.UTF-8", "LC_ALL": "de_DE.UTF-8", "LC_MESSAGES": "de_DE.UTF-8",
+                        "LANGUAGE": "de", "PATH": "/bin"})
+        self.assertEqual((env["LANG"], env["LC_ALL"]), (sandbox.RUN_LOCALE, sandbox.RUN_LOCALE))
+        self.assertEqual(sandbox.RUN_LOCALE, "en_US.UTF-8")
+        self.assertNotIn("LANGUAGE", env)
+        self.assertNotIn("LC_MESSAGES", env)
+        self.assertEqual(env["PATH"], "/bin")
+
     def test_child_env_drops_the_ssh_agent(self):
         env = self.env({"SSH_AUTH_SOCK": "/tmp/agent.sock", "SSH_AGENT_PID": "42", "PATH": "/bin"})
         self.assertNotIn("SSH_AUTH_SOCK", env)
