@@ -114,7 +114,8 @@ class Check(TempDirCase):
             errors, warnings = self.run_check(chrome_needed_by=("reason A", "reason B"))
         self.assertEqual(len(errors), 1)
         self.assertIn("Google Chrome", errors[0])
-        self.assertIn("reason A and reason B", errors[0])  # says why the check applies
+        self.assertIn("reason A and reason B need it", errors[0])  # says why the check applies
+        self.assertIn("or remove what needs it", errors[0])
         self.assertEqual(warnings, [])
         with mock.patch.object(preflight, "chrome_installed", return_value=True):
             self.assertEqual(self.run_check(chrome_needed_by=("reason A",)), ([], []))

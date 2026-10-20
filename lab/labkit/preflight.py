@@ -40,7 +40,7 @@ def check(
     `npx`. `chrome_needed_by` names what needs Google Chrome (e.g. the
     playwright MCP server of those profiles, or the assessment); empty if
     nothing does. Without `npx` or Chrome a run would not fail but measure
-    a different session or skip its assessment, so both are errors.
+    a different session or fail its assessment, so both are errors.
     """
     errors: list[str] = []
     warnings: list[str] = []
@@ -56,7 +56,7 @@ def check(
     if chrome_needed_by and not chrome_installed(home):
         errors.append(
             f"Google Chrome is not installed, but {' and '.join(chrome_needed_by)} need it;"
-            " install Google Chrome"
+            " install Google Chrome or remove what needs it"
         )
 
     if need_claude_token and not cfg.get("CLAUDE_CODE_OAUTH_TOKEN"):

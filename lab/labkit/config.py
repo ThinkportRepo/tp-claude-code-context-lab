@@ -235,8 +235,12 @@ def load_assessment(path: Path, lab_root: Path) -> Assessment | None:
         if check["type"] == "browser_script":
             try:
                 _lab_file(lab_root, ASSESSMENT_SCRIPT)
+            except _NotFound:
+                raise ValueError(
+                    f"{where}: browser_script needs {ASSESSMENT_SCRIPT} in the lab root"
+                ) from None
             except ValueError as exc:
-                raise ValueError(f"{where}: browser_script runs {exc}") from None
+                raise ValueError(f"{where}: browser_script needs {ASSESSMENT_SCRIPT}: {exc}") from None
         checks.append(check["type"])
     return Assessment(tuple(checks))
 

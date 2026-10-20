@@ -45,8 +45,9 @@ wait_s = 180
 type = "homepage_is_pages"
 ```
 
-Whether the app works is not checked: such a check would change when
-follow-ups are sent, and with them the token counts. `python3 lab.py
+Whether the app works is not part of the goal: such a check would change
+when follow-ups are sent, and with them the token counts. The optional
+assessment below checks the app afterwards. `python3 lab.py
 setup` shows the goal; a missing or invalid file stops `setup`, `run` and
 `session`.
 
@@ -61,14 +62,17 @@ the run's status. `results.csv` records the result as `assess_ok` and
 `[[check]]` names one type and loads the site fresh in headless Google
 Chrome:
 
-- `page_ok`: the page loads without JavaScript errors or failed requests
-  and shows content.
-- `reacts_to_clicks`: clicking buttons or elements with a click handler
-  changes the page, without errors.
+- `page_ok`: the page loads without JavaScript errors or failed script,
+  stylesheet or image loads, and shows content.
+- `reacts_to_clicks`: clicking buttons, checkboxes or elements with a
+  click handler changes the page (or reloads it), without errors. Changes
+  that also happen without a click, such as a clock, do not count.
 - `browser_script`: runs `prompt-assessment.js` from the lab root on the
   loaded page. The script defines
   `window.labAssess = async (document) => ({ step: true, ... })`; every
-  step that is not `true` fails.
+  step that is not `true` fails. It starts 500 ms after the page's `load`
+  event and has 10 s of virtual time, in which timers run without real
+  waiting. A page that reloads starts the script again.
 
 ```toml
 [[check]]
@@ -79,5 +83,7 @@ type = "reacts_to_clicks"
 ```
 
 `page_ok` and `reacts_to_clicks` work for any web app; `browser_script` is
-for what only the scenario knows, such as the rules of a game. With an
-assessment file, `setup`, `run` and `session` need Google Chrome.
+for what only the scenario knows, such as the rules of a game.
+`python3 lab.py setup` shows the assessment. An invalid file, a repeated
+type, or `browser_script` without `prompt-assessment.js` stops `setup`,
+`run` and `session`, and with an assessment file they need Google Chrome.

@@ -237,7 +237,7 @@ def _summary_lines(rows: list[dict]) -> list[str]:
             *(_cell(g[f], g["n"]) for f in SHOWN),
         ]))  # fmt: skip
         if g["assess"]:
-            body.append((section, f"assessment passed: {g['assess']} of the runs that reached the goal"))
+            body.append((section, f"assessment: {g['assess']} assessed runs passed"))
         if g["mcp_connected"]:
             body.append((section, f"MCP servers connected at start: {g['mcp_connected']}"))
     return _sectioned(["profile", "prompt", "n", "ok", "goal", *SHOWN], body, left=2)

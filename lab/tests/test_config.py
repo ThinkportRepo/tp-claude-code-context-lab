@@ -305,7 +305,7 @@ class Assessment(unittest.TestCase):
 
     def test_browser_script_needs_the_script_file(self):
         (self.root / config.ASSESSMENT_SCRIPT).unlink()
-        self.assert_error('[[check]]\ntype = "browser_script"\n', "check 1", "prompt-assessment.js", "not found")
+        self.assert_error('[[check]]\ntype = "browser_script"\n', "check 1", "needs prompt-assessment.js in the lab root")
         self.assertEqual(self.load('[[check]]\ntype = "page_ok"\n').checks, ("page_ok",))
 
     def test_unknown_type_and_key(self):
