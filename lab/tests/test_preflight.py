@@ -80,7 +80,7 @@ class Check(TempDirCase):
     def run_check(self, cfg=None, **kwargs):
         full = {"CLAUDE_CODE_OAUTH_TOKEN": TOKEN}
         full.update(cfg or {})
-        opts = dict(need_github=False, need_node=False, need_chrome=False, timeout_s=1200, now=NOW,
+        opts = dict(need_github=False, need_node=False, chrome_needed_by=(), timeout_s=1200, now=NOW,
                     sandbox=self.sandbox, home=self.home)
         opts.update(kwargs)
         return preflight.check(full, **opts)
@@ -90,7 +90,7 @@ class Check(TempDirCase):
 
     def test_missing_claude_token(self):
         errors, _ = preflight.check(
-            {}, need_github=False, need_node=False, need_chrome=False, timeout_s=1200, now=NOW,
+            {}, need_github=False, need_node=False, chrome_needed_by=(), timeout_s=1200, now=NOW,
             sandbox=self.sandbox, home=self.home)
         self.assertEqual(len(errors), 1)
         self.assertIn("python3 lab.py tokens claude", errors[0])
@@ -108,16 +108,17 @@ class Check(TempDirCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("npx", errors[0])
 
-    def test_chrome_only_needed_with_need_chrome(self):
+    def test_chrome_only_needed_when_something_needs_it(self):
         with mock.patch.object(preflight, "chrome_installed", return_value=False):
-            self.assertEqual(self.run_check(need_chrome=False), ([], []))
-            errors, warnings = self.run_check(need_chrome=True)
+            self.assertEqual(self.run_check(chrome_needed_by=()), ([], []))
+            errors, warnings = self.run_check(chrome_needed_by=("reason A", "reason B"))
         self.assertEqual(len(errors), 1)
         self.assertIn("Google Chrome", errors[0])
-        self.assertIn("lab/matrix.conf", errors[0])  # says why the check applies
+        self.assertIn("reason A and reason B need it", errors[0])  # says why the check applies
+        self.assertIn("or remove what needs it", errors[0])
         self.assertEqual(warnings, [])
         with mock.patch.object(preflight, "chrome_installed", return_value=True):
-            self.assertEqual(self.run_check(need_chrome=True), ([], []))
+            self.assertEqual(self.run_check(chrome_needed_by=("reason A",)), ([], []))
 
     def test_old_python(self):
         with mock.patch.object(preflight.sys, "version_info", (3, 10, 0)):
@@ -270,6 +271,18 @@ class ChromeInstalled(TempDirCase):
         with mock.patch.object(preflight.sys, "platform", "linux"):
             self.assertFalse(preflight.chrome_installed(self.home, which=self.nothing_on_path))
 
+    def test_chrome_path_is_the_executable(self):
+        (self.home / "Applications" / "Google Chrome.app").mkdir(parents=True)
+        with mock.patch.object(preflight, "MACOS_APP_DIRS", (self.tmp / "none",)):
+            self.assertEqual(
+                preflight.chrome_path(self.home, which=self.nothing_on_path),
+                str(self.home / "Applications" / "Google Chrome.app" / "Contents" / "MacOS" / "Google Chrome"),
+            )
+            self.assertIsNone(preflight.chrome_path(self.tmp / "nohome", which=self.nothing_on_path))
+        with mock.patch.object(preflight.sys, "platform", "linux"):
+            found = preflight.chrome_path(self.home, which=lambda n: "/usr/bin/chrome" if n == "chrome" else None)
+            self.assertEqual(found, "/usr/bin/chrome")
+
     def test_macos_app_is_not_looked_up_on_other_systems(self):
         (self.home / "Applications" / "Google Chrome.app").mkdir(parents=True)
         with mock.patch.object(preflight.sys, "platform", "linux"):
@@ -293,7 +306,7 @@ class Prepare(unittest.TestCase):
         self.env_file = self.tmp / ".env"  # never the developer's real .env
 
     def prepare(self, command, errors, warnings, file_problems=(), need_mcp=False, args=None,
-                results_file=None, environ=None):
+                results_file=None, environ=None, need_assessment=False):
         cli = self.load_lab_module()
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.object(cli, "ENV_FILE", self.env_file), \
@@ -303,7 +316,9 @@ class Prepare(unittest.TestCase):
              mock.patch.dict("os.environ", {"GH_TOKEN": "ghp_SECRETSECRET", **(environ or {})}), \
              contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                cfg = cli.prepare(command, args or argparse.Namespace(), need_mcp=need_mcp)
+                cfg = cli.prepare(
+                    command, args or argparse.Namespace(), need_mcp=need_mcp, need_assessment=need_assessment
+                )
                 code = None
             except SystemExit as e:
                 cfg, code = None, e.code
@@ -362,20 +377,27 @@ class Prepare(unittest.TestCase):
             *_, check = self.prepare(command, [], [], need_mcp=True)
             self.assertTrue(check.call_args.kwargs["need_github"], command)
             self.assertTrue(check.call_args.kwargs["need_node"], command)
-            self.assertTrue(check.call_args.kwargs["need_chrome"], command)
+            self.assertIn("lab/matrix.conf", " ".join(check.call_args.kwargs["chrome_needed_by"]), command)
             self.assertTrue(check.call_args.kwargs["need_claude_token"], command)
             self.assertEqual(check.call_args.kwargs["timeout_s"], 1200)
         *_, check = self.prepare("report", [], [])
         self.assertFalse(check.call_args.kwargs["need_github"])
         self.assertFalse(check.call_args.kwargs["need_node"])
-        self.assertFalse(check.call_args.kwargs["need_chrome"])
+        self.assertEqual(check.call_args.kwargs["chrome_needed_by"], ())
+
+    def test_an_assessment_file_needs_chrome_but_not_node(self):
+        for command in ("setup", "run", "session"):
+            *_, check = self.prepare(command, [], [], need_assessment=True)
+            (reason,) = check.call_args.kwargs["chrome_needed_by"]
+            self.assertIn("prompt-assessment.toml", reason, command)
+            self.assertFalse(check.call_args.kwargs["need_node"], command)
 
     def test_teardown_needs_no_claude_token_npx_chrome_or_github_margin(self):
-        *_, check = self.prepare("teardown", [], [], need_mcp=True)
+        *_, check = self.prepare("teardown", [], [], need_mcp=True, need_assessment=True)
         kwargs = check.call_args.kwargs
         self.assertEqual(
-            (kwargs["need_github"], kwargs["need_node"], kwargs["need_chrome"], kwargs["need_claude_token"]),
-            (False, False, False, False),
+            (kwargs["need_github"], kwargs["need_node"], kwargs["chrome_needed_by"], kwargs["need_claude_token"]),
+            (False, False, (), False),
         )
 
     def test_run_timeout_from_the_environment_reaches_the_token_check(self):

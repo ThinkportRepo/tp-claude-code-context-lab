@@ -23,6 +23,12 @@ GOAL_FILE = "prompt-goal.toml"
 # Check type -> the keys it takes besides `type`. The types are fixed here,
 # not shell commands in the file: a check runs with the lab's GH_TOKEN in reach.
 GOAL_CHECKS = {"pages_live": {"wait_s"}, "homepage_is_pages": set()}
+# Checks of the finished app, run once after the last turn; optional, relative to the lab root.
+ASSESSMENT_FILE = "prompt-assessment.toml"
+# Check type -> the keys it takes besides `type`. All run in headless Chrome.
+ASSESSMENT_CHECKS = {"page_ok": set(), "reacts_to_clicks": set(), "browser_script": set()}
+# The scenario's own test that browser_script runs, relative to the lab root.
+ASSESSMENT_SCRIPT = "prompt-assessment.js"
 
 # A test id names sandbox/<id>/, which every run wipes, and the repo lab-<id>,
 # which teardown only finds as `lab-test*`; so: no path parts, and a fixed prefix.
@@ -49,6 +55,13 @@ class Goal:
     pages_wait_s: int = 0
 
 
+@dataclass(frozen=True)
+class Assessment:
+    """The check types of the assessment file, in file order."""
+
+    checks: tuple[str, ...]
+
+
 def _profile_dir(lab_dir: Path, profile: str) -> Path:
     """Return lab/profiles/<profile>, rejecting names that leave that directory."""
     path = lab_dir / "profiles" / profile
@@ -57,22 +70,40 @@ def _profile_dir(lab_dir: Path, profile: str) -> Path:
     return path
 
 
+def _lab_file(lab_root: Path, name: str) -> Path:
+    """Return the file `name` names, relative to the lab root.
+
+    Raises ValueError if it leaves the lab root (also through a symlink),
+    _NotFound (a ValueError too) if it is not an existing file.
+    """
+    root = lab_root.resolve()
+    path = (root / name).resolve()
+    if Path(name).is_absolute() or not path.is_relative_to(root):
+        raise ValueError(f"{name!r} is not inside the lab root {root}")
+    if not path.is_file():
+        raise _NotFound(f"{name!r} not found")
+    return path
+
+
+class _NotFound(ValueError):
+    """A file named relative to the lab root does not exist."""
+
+
 def _prompt_file(lab_root: Path, prompt: str) -> Path:
     """Return the file `prompt` names, relative to the lab root.
 
     Raises ValueError if it leaves the lab root (also through a symlink) or
     is not an existing file.
     """
-    root = lab_root.resolve()
-    path = (root / prompt).resolve()
-    if Path(prompt).is_absolute() or not path.is_relative_to(root):
-        raise ValueError(f"prompt file {prompt!r} is not inside the lab root {root}")
-    if not path.is_file():
+    try:
+        return _lab_file(lab_root, prompt)
+    except _NotFound:
         raise ValueError(
             f"prompt file {prompt!r} not found; the prompt column takes a file path"
             f" relative to the lab root, e.g. {DEFAULT_PROMPT}"
-        )
-    return path
+        ) from None
+    except ValueError as exc:
+        raise ValueError(f"prompt file {exc}") from None
 
 
 def load_matrix(path: Path, environ: Mapping[str, str]) -> list[Test]:
@@ -172,27 +203,9 @@ def load_goal(path: Path) -> Goal:
         text = path.read_text()
     except FileNotFoundError:
         raise ValueError(f"{path}: not found; it sets the goal every run is checked against") from None
-    try:
-        data = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:
-        raise ValueError(f"{path}: not valid TOML ({exc})") from None
-    for key in data:
-        if key != "check":
-            raise ValueError(f"{path}: unknown key {key!r}; the file holds [[check]] tables only")
-    checks = data.get("check")
-    if not isinstance(checks, list) or not checks:
-        raise ValueError(f"{path}: expected at least one [[check]] table")
     found: dict[str, dict] = {}
-    for n, check in enumerate(checks, start=1):
-        where = f"{path}: check {n}"
-        kind = check.get("type") if isinstance(check, dict) else None
-        if not isinstance(kind, str) or kind not in GOAL_CHECKS:
-            raise ValueError(f"{where}: unknown type {kind!r} (known: {', '.join(GOAL_CHECKS)})")
-        for key in check:
-            if key != "type" and key not in GOAL_CHECKS[kind]:
-                raise ValueError(f"{where}: unknown key {key!r} for type {kind!r}")
-        if kind in found:
-            raise ValueError(f"{where}: duplicate type {kind!r}")
+    for where, check in _checks(path, text, GOAL_CHECKS):
+        kind = check["type"]
         if "wait_s" in GOAL_CHECKS[kind]:
             wait_s = check.get("wait_s")
             if isinstance(wait_s, bool) or not isinstance(wait_s, int) or wait_s < 0:
@@ -203,6 +216,71 @@ def load_goal(path: Path) -> Goal:
         homepage_is_pages="homepage_is_pages" in found,
         pages_wait_s=found["pages_live"]["wait_s"] if "pages_live" in found else 0,
     )
+
+
+def load_assessment(path: Path, lab_root: Path) -> Assessment | None:
+    """Parse the assessment file: one or more `[[check]]` tables, each with a `type` from ASSESSMENT_CHECKS.
+
+    The types take no other keys. `browser_script` runs ASSESSMENT_SCRIPT,
+    which must exist in the lab root. Each type may appear once. None if
+    the file does not exist: the assessment is optional. Raises
+    ValueError("<path>: ...") if it is invalid.
+    """
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return None
+    checks = []
+    for where, check in _checks(path, text, ASSESSMENT_CHECKS):
+        if check["type"] == "browser_script":
+            try:
+                _lab_file(lab_root, ASSESSMENT_SCRIPT)
+            except _NotFound:
+                raise ValueError(
+                    f"{where}: browser_script needs {ASSESSMENT_SCRIPT} in the lab root"
+                ) from None
+            except ValueError as exc:
+                raise ValueError(f"{where}: browser_script needs {ASSESSMENT_SCRIPT}: {exc}") from None
+        checks.append(check["type"])
+    return Assessment(tuple(checks))
+
+
+def describe_assessment(assessment: Assessment) -> str:
+    """The assessment's checks in one line, e.g. for `lab.py setup`."""
+    return ", ".join(
+        f"{c} ({ASSESSMENT_SCRIPT})" if c == "browser_script" else c for c in assessment.checks
+    )
+
+
+def _checks(path: Path, text: str, known: dict[str, set[str]]):
+    """Yield ("<path>: check <n>", table) for each `[[check]]` table in the TOML `text`.
+
+    Every table has a `type` from `known` and only the keys `known` allows
+    for it; each type appears once. Raises ValueError("<path>: ...") otherwise.
+    """
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"{path}: not valid TOML ({exc})") from None
+    for key in data:
+        if key != "check":
+            raise ValueError(f"{path}: unknown key {key!r}; the file holds [[check]] tables only")
+    checks = data.get("check")
+    if not isinstance(checks, list) or not checks:
+        raise ValueError(f"{path}: expected at least one [[check]] table")
+    seen: set[str] = set()
+    for n, check in enumerate(checks, start=1):
+        where = f"{path}: check {n}"
+        kind = check.get("type") if isinstance(check, dict) else None
+        if not isinstance(kind, str) or kind not in known:
+            raise ValueError(f"{where}: unknown type {kind!r} (known: {', '.join(known)})")
+        for key in check:
+            if key != "type" and key not in known[kind]:
+                raise ValueError(f"{where}: unknown key {key!r} for type {kind!r}")
+        if kind in seen:
+            raise ValueError(f"{where}: duplicate type {kind!r}")
+        seen.add(kind)
+        yield where, check
 
 
 def describe_goal(goal: Goal) -> str:

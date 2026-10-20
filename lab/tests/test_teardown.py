@@ -525,6 +525,8 @@ class Cli(unittest.TestCase):
         self.cli = load_cli()
         self.cli.LAB_ROOT = self.lab_root
         self.cli.SANDBOX = self.lab_root / "sandbox"
+        # The lab root moved: no assessment file unless a test writes one.
+        self.cli.ASSESSMENT_FILE = self.lab_root / "prompt-assessment.toml"
         self.cfg = {"LAB_GH_ORG": "lab-org", "GH_TOKEN": GH_TOKEN, "CLAUDE_CODE_OAUTH_TOKEN": OAUTH_TOKEN}
 
     def call(self, fn, *args, **kwargs):
@@ -600,6 +602,21 @@ class Cli(unittest.TestCase):
         (code, out, _), _, _, _ = self.setup_cmd()
         self.assertEqual(code, 0)
         self.assertIn("Goal (prompt-goal.toml): pages_live (wait up to 30 s)", out)
+
+    def test_setup_prints_the_assessment_or_none(self):
+        (code, out, _), _, _, _ = self.setup_cmd()
+        self.assertEqual(code, 0)
+        self.assertIn("Assessment: none (no prompt-assessment.toml)", out)
+        self.cli.ASSESSMENT_FILE.write_text('[[check]]\ntype = "page_ok"\n')
+        (code, out, _), _, _, _ = self.setup_cmd()
+        self.assertIn("Assessment (prompt-assessment.toml): page_ok", out)
+
+    def test_setup_stops_on_a_bad_assessment_file(self):
+        self.cli.ASSESSMENT_FILE.write_text('[[check]]\ntype = "app_works"\n')
+        (code, _, err), _, probe, _ = self.setup_cmd()
+        self.assertEqual(code, 1)
+        self.assertIn("unknown type 'app_works'", err)
+        probe.assert_not_called()
 
     def test_setup_stops_on_a_bad_goal_file(self):
         bad = self.lab_root / "prompt-goal.toml"

@@ -1,8 +1,9 @@
 # Prompts and goal
 
-A test scenario consists of the prompts Claude gets and the goal that
-decides whether a run reached it. The follow-ups the runner sends while
-the goal is not reached are the same for every scenario.
+A test scenario consists of the prompts Claude gets, the goal that
+decides whether a run reached it, and an optional assessment of the
+finished app. The follow-ups the runner sends while the goal is not
+reached are the same for every scenario.
 
 ## Prompts
 
@@ -44,7 +45,49 @@ wait_s = 180
 type = "homepage_is_pages"
 ```
 
-Whether the app works is not checked: such a check would change when
-follow-ups are sent, and with them the token counts. `python3 lab.py
+Whether the app works is not part of the goal: such a check would change
+when follow-ups are sent, and with them the token counts. The optional
+assessment below checks the app afterwards. `python3 lab.py
 setup` shows the goal; a missing or invalid file stops `setup`, `run` and
 `session`.
+
+## Assessment
+
+`prompt-assessment.toml` in the lab root is optional. When it exists and a
+run reached its goal, the lab checks the published app once, after the
+last turn: outside `duration_s`, without follow-ups and without changing
+the run's status. `results.csv` records the result as `assess_ok` and
+`assess_failed` (the failed steps, e.g. `page_ok:no_errors`), and
+`python3 lab.py report` shows how many assessed runs passed. Each
+`[[check]]` names one type and loads the site fresh in headless Google
+Chrome:
+
+- `page_ok`: the page loads without JavaScript errors or failed script,
+  stylesheet or image loads, and shows content.
+- `reacts_to_clicks`: clicking buttons, checkboxes or elements with a
+  click handler changes the page (or reloads it), without errors. What
+  changes during 2 s without clicks, such as a clock or an animation, does
+  not count, nor do inputs the browser toggles by itself (a checkbox, a
+  radio group). Changes that repeat more slowly or start later can still
+  make a page pass, and a page whose clicks only act on input (an empty
+  to-do item, a form with required fields) fails.
+- `browser_script`: runs `prompt-assessment.js` from the lab root on the
+  loaded page. The script defines
+  `window.labAssess = async (document) => ({ step: true, ... })`; every
+  step that is not `true` fails. It starts 500 ms after the page's `load`
+  event; the page has 30 s of virtual time in total, in which timers run
+  without real waiting. A page that reloads starts the script again.
+
+```toml
+[[check]]
+type = "page_ok"
+
+[[check]]
+type = "reacts_to_clicks"
+```
+
+`page_ok` and `reacts_to_clicks` work for any web app; `browser_script` is
+for what only the scenario knows, such as the rules of a game.
+`python3 lab.py setup` shows the assessment. An invalid file, a repeated
+type, or `browser_script` without `prompt-assessment.js` stops `setup`,
+`run` and `session`, and with an assessment file they need Google Chrome.

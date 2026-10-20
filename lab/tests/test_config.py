@@ -276,6 +276,54 @@ class Goal(unittest.TestCase):
         )
 
 
+class Assessment(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name).resolve()
+        self.path = self.root / "prompt-assessment.toml"
+        (self.root / "prompt-assessment.js").write_text("window.labAssess = async () => ({});\n")
+
+    def load(self, text):
+        self.path.write_text(text)
+        return config.load_assessment(self.path, self.root)
+
+    def assert_error(self, text, *parts):
+        with self.assertRaises(ValueError) as ctx:
+            self.load(text)
+        message = str(ctx.exception)
+        self.assertTrue(message.startswith(f"{self.path}:"), message)
+        for part in parts:
+            self.assertIn(part, message)
+
+    def test_missing_file_means_no_assessment(self):
+        self.assertIsNone(config.load_assessment(self.path, self.root))
+
+    def test_checks_in_file_order(self):
+        text = '[[check]]\ntype = "reacts_to_clicks"\n[[check]]\ntype = "page_ok"\n[[check]]\ntype = "browser_script"\n'
+        self.assertEqual(self.load(text).checks, ("reacts_to_clicks", "page_ok", "browser_script"))
+
+    def test_browser_script_needs_the_script_file(self):
+        (self.root / config.ASSESSMENT_SCRIPT).unlink()
+        self.assert_error('[[check]]\ntype = "browser_script"\n', "check 1", "needs prompt-assessment.js in the lab root")
+        self.assertEqual(self.load('[[check]]\ntype = "page_ok"\n').checks, ("page_ok",))
+
+    def test_unknown_type_and_key(self):
+        self.assert_error('[[check]]\ntype = "pages_live"\n', "check 1", "'pages_live'", "page_ok")
+        self.assert_error('[[check]]\ntype = "browser_script"\nscript = "x.js"\n', "unknown key 'script'")
+
+    def test_duplicate_type(self):
+        self.assert_error('[[check]]\ntype = "page_ok"\n[[check]]\ntype = "page_ok"\n', "check 2", "duplicate")
+
+    def test_invalid_or_empty_file(self):
+        self.assert_error("[[check]]\ntype = \n", "line 2")
+        self.assert_error("", "at least one [[check]]")
+
+    def test_describe(self):
+        assessment = config.Assessment(("page_ok", "browser_script"))
+        self.assertEqual(config.describe_assessment(assessment), "page_ok, browser_script (prompt-assessment.js)")
+
+
 class Profiles(unittest.TestCase):
     def test_profiles_share_permission_lists(self):
         settings = {p: config.profile_settings(REPO, p) for p in PROFILES}
@@ -450,6 +498,22 @@ class CliWiring(TempLab):
                 self.assertEqual(call(), 1)
                 gh.assert_not_called()
                 self.assertIn("prompt-goal.toml: not found", err.getvalue())
+
+    def test_an_assessment_file_makes_prepare_require_chrome(self):
+        cli = self.load_lab_module()
+        self.matrix.write_text("test1 clean prompt-simple.md\n")
+        assessment = self.lab_root / "prompt-assessment.toml"
+        for exists in (False, True):
+            if exists:
+                assessment.write_text('[[check]]\ntype = "page_ok"\n')
+            with self.subTest(exists=exists), \
+                 mock.patch.object(cli, "MATRIX_FILE", self.matrix), \
+                 mock.patch.object(cli, "ASSESSMENT_FILE", assessment), \
+                 mock.patch.object(cli, "prepare", return_value={}) as prepare, \
+                 mock.patch.object(cli, "run_setup", return_value=0), \
+                 mock.patch.object(sys, "argv", ["lab.py", "setup"]):
+                self.assertEqual(cli.main(), 0)
+                self.assertEqual(prepare.call_args.kwargs["need_assessment"], exists)
 
     def test_tokens_command_ignores_broken_matrix(self):
         cli = self.load_lab_module()

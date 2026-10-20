@@ -13,7 +13,7 @@ TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 
 FIELDS = (
     "timestamp", "test", "mode", "model", "effort", "profile", "prompt", "status",
-    "goal_ok", "ctx_start", "ctx_end", "ctx_growth", "tokens_in",
+    "goal_ok", "assess_ok", "assess_failed", "ctx_start", "ctx_end", "ctx_growth", "tokens_in",
     "tokens_out", "cache_read", "cache_write", "sub_calls",
     "sub_ctx_start_max", "sub_ctx_growth_max", "api_calls", "turns",
     "duration_s", "limit_5h_start_pct", "limit_5h_end_pct", "api_equiv_usd",

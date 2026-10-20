@@ -38,6 +38,10 @@ class TestResultsFile(unittest.TestCase):
         self.assertEqual(results.FIELDS[results.FIELDS.index("status") + 1], "goal_ok")
         self.assertNotIn("pages_ok", results.FIELDS)
 
+    def test_assessment_columns_follow_goal_ok(self):
+        at = results.FIELDS.index("goal_ok")
+        self.assertEqual(results.FIELDS[at + 1 : at + 3], ("assess_ok", "assess_failed"))
+
     def test_effort_follows_model(self):
         self.assertEqual(results.FIELDS[results.FIELDS.index("model") + 1], "effort")
 
@@ -115,6 +119,11 @@ class TestSummarize(unittest.TestCase):
             row(status="ok", goal_ok=True), row(status="timeout", goal_ok=""),
         ])  # fmt: skip
         self.assertEqual((g["n"], g["ok"], g["goal_ok"]), (4, 2, 2))
+
+    def test_assessment_counts_passed_of_assessed(self):
+        g = group([row(assess_ok="True"), row(assess_ok=False), row(assess_ok=""), row()])
+        self.assertEqual(g["assess"], "1/2")
+        self.assertEqual(group([row(), row(assess_ok="")])["assess"], "")
 
     def test_limit_used_is_end_minus_start(self):
         g = group([row(limit_5h_start_pct=12, limit_5h_end_pct=15)])
@@ -246,6 +255,11 @@ class TestRender(unittest.TestCase):
         cells = next(l for l in lines if l.startswith("clean")).split()
         self.assertEqual(header[5:], ["ctx_start", "ctx_growth", "tokens_out", "cache_read", "limit_used"])
         self.assertEqual(cells[5:], ["950", "–", "0", "–", "–"])
+
+    def test_render_shows_assessment_below_the_group(self):
+        rows = [row(goal_ok="True", assess_ok="True"), row(goal_ok="True", assess_ok="False"), row(goal_ok="False")]
+        self.assertIn("assessment: 1/2 assessed runs passed", report.render(rows))
+        self.assertNotIn("assessment", report.render([row(goal_ok="True")]))
 
     def test_render_shows_goal_count_next_to_ok(self):
         rows = [

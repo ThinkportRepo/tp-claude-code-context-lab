@@ -2,7 +2,9 @@
 
 The goal comes from the goal file (`config.load_goal`, `prompt-goal.toml`)
 and is checked by `GitHub.goal_ok`. Whether the app works is not part of
-the goal.
+the goal: once the goal is reached, the optional assessment
+(`prompt-assessment.toml`, `assess.run`) checks the app, outside the
+measured time and without follow-ups.
 
 `run_headless` drives `claude -p`; `run_interactive` hands the terminal to
 a human. Every run appends exactly one row to `<lab_root>/results.csv`, also
@@ -24,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from . import config, metrics, results, sandbox
+from . import assess, config, metrics, preflight, results, sandbox
 from .github import GitHub
 
 RUN_TIMEOUT_S = 1200
@@ -222,6 +224,30 @@ def _build_wait(test: config.Test, gh: GitHub, goal: config.Goal) -> int:
     return goal.pages_wait_s
 
 
+def _assess(lab_root: Path, test: config.Test, gh: GitHub, assessment: config.Assessment) -> dict:
+    """Run `assessment` against the test's Pages site; the row's assess_ok and assess_failed.
+
+    Never fails the run: an error on the way (GitHub, Chrome, the proxy)
+    fails the assessment as "assessment:error".
+    """
+    print(f"{test.id}: assessing the app ({config.describe_assessment(assessment)})")
+    try:
+        status = gh.pages_status(f"lab-{test.id}")
+        url = status.get("html_url") if status else None
+        chrome = preflight.chrome_path(Path.home())
+        if not url or not chrome:
+            failed, errors = [f"assessment:{'no_site' if not url else 'no_chrome'}"], []
+        else:
+            failed, errors = assess.run(assessment, url, lab_root, chrome)
+    except Exception as exc:  # whatever fails here fails the assessment, never the run
+        print(f"{test.id}: assessment error: {exc}")
+        failed, errors = ["assessment:error"], []
+    for error in errors[:3]:
+        print(f"{test.id}: page error: {error}")
+    print(f"{test.id}: assessment {'passed' if not failed else 'failed: ' + ', '.join(failed)}")
+    return {"assess_ok": not failed, "assess_failed": ";".join(failed)}
+
+
 def _status(*, failed: bool, timed_out: bool, goal_ok: bool | None, denied: bool | None) -> str:
     if failed:
         return "failed"
@@ -241,6 +267,7 @@ def run_headless(
     gh: GitHub,
     *,
     goal: config.Goal,
+    assessment: config.Assessment | None = None,
     limit_start: int | None,
     timeout_s: int = RUN_TIMEOUT_S,
 ) -> dict:
@@ -254,9 +281,10 @@ def run_headless(
     `timeout_s` is the budget for the run; each `claude` process gets what
     is left of it. The clock (budget and `duration_s`) starts right before
     turn 1, as in an interactive session, so neither plugin installation
-    nor the repo reset counts against a profile.
+    nor the repo reset counts against a profile. Once the goal is reached,
+    `assessment` (if any) runs; its time is not part of `duration_s`.
     """
-    started = deadline = None
+    started = deadline = ended = None
     stamp = datetime.now(timezone.utc).strftime(results.TIMESTAMP_FORMAT)
     p = sandbox.paths(lab_root, test.id)
     out_dir = p.results / stamp  # its name is the row's timestamp
@@ -307,6 +335,9 @@ def run_headless(
             final_wait_s = _build_wait(test, gh, goal)
             if final_wait_s:
                 goal_ok = _goal_ok(test, gh, goal, final_wait_s)
+        ended = time.monotonic()
+        if goal_ok and assessment:
+            row.update(_assess(lab_root, test, gh, assessment))
     except _RunTimeout:
         timed_out = True
         print(f"{test.id}: timed out after {timeout_s} s")
@@ -328,7 +359,7 @@ def run_headless(
         row["goal_ok"] = goal_ok
         row["limit_5h_end_pct"] = info["limit_5h_end_pct"]
         row["mcp_connected"] = info["mcp_connected"]
-        row["duration_s"] = None if started is None else round(time.monotonic() - started)
+        row["duration_s"] = None if started is None else round((ended or time.monotonic()) - started)
         row["status"] = _status(
             failed=failed, timed_out=timed_out, goal_ok=goal_ok, denied=info["denied"]
         )
@@ -359,6 +390,7 @@ def run_interactive(
     gh: GitHub,
     *,
     goal: config.Goal,
+    assessment: config.Assessment | None = None,
     limit_start: int | None,
     prompt: bool = True,
 ) -> dict | None:
@@ -366,7 +398,8 @@ def run_interactive(
 
     Same reset as headless (fresh config with plugins, empty repo), then
     `claude <prompt> --model M [--effort E] --permission-mode default` until the human
-    exits. Afterwards: `goal` check, metrics, row (`mode` interactive).
+    exits. Afterwards: `goal` check, the `assessment` if the goal is met,
+    metrics, row (`mode` interactive).
     `limit_5h_end_pct` comes from the status line the session saved.
     `duration_s` is the session's wall time. Status is `ok` if the goal is met,
     else `failed`: there is no timeout and no denial count interactively.
@@ -397,6 +430,8 @@ def run_interactive(
         if not prompt:
             return None
         goal_ok = _goal_ok(test, gh, goal, _build_wait(test, gh, goal))
+        if goal_ok and assessment:
+            row.update(_assess(lab_root, test, gh, assessment))
     except BaseException:
         failed = True
         raise

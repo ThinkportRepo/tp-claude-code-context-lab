@@ -16,7 +16,7 @@ from . import results
 KEY = ("mode", "model", "effort", "profile", "prompt")
 NON_NUMERIC = {
     "timestamp", "test", "mode", "model", "effort", "profile", "prompt", "status",
-    "goal_ok", "plugin_versions", "mcp_connected",
+    "goal_ok", "assess_ok", "assess_failed", "plugin_versions", "mcp_connected",
 }  # fmt: skip
 NUMERIC = tuple(f for f in results.FIELDS if f not in NON_NUMERIC)
 # Columns of the summary table, in order, after profile/prompt/n/ok/goal.
@@ -88,9 +88,10 @@ def summarize(rows: list[dict]) -> list[dict]:
     A row without an effort has the effort "" here.
 
     Besides the key: `n` runs, `ok` (status ok), `goal_ok` (goal_ok
-    true), and for every numeric field plus `limit_used` (5-hour limit end
-    minus start) and `tokens_total` (the four token kinds added up per run)
-    a {"median", "min", "max"} dict, or None if no run has a value.
+    true), `assess` ("<passed>/<assessed>", "" if no run was assessed),
+    and for every numeric field plus `limit_used` (5-hour limit end minus
+    start) and `tokens_total` (the four token kinds added up per run) a
+    {"median", "min", "max"} dict, or None if no run has a value.
     `mcp_connected` is the range of MCP servers connected at start
     ("4/13" or "4/13–9/13"), "" if no run recorded it.
     """
@@ -100,6 +101,7 @@ def summarize(rows: list[dict]) -> list[dict]:
         g["n"] = len(members)
         g["ok"] = sum(1 for r in members if str(r.get("status")) == "ok")
         g["goal_ok"] = sum(1 for r in members if _is_true(r.get("goal_ok")))
+        g["assess"] = _assess(members)
         for field in NUMERIC:
             g[field] = _stats([_num(r.get(field)) for r in members])
         g["limit_used"] = _stats([_limit_used(r) for r in members])
@@ -107,6 +109,14 @@ def summarize(rows: list[dict]) -> list[dict]:
         g["mcp_connected"] = _mcp_range(members)
         out.append(g)
     return out
+
+
+def _assess(rows: list[dict]) -> str:
+    """"<passed>/<assessed>" over the rows with an assessment result; "" if none has one."""
+    assessed = [r for r in rows if str(r.get("assess_ok")).strip().lower() in ("true", "false")]
+    if not assessed:
+        return ""
+    return f"{sum(1 for r in assessed if _is_true(r['assess_ok']))}/{len(assessed)}"
 
 
 def _median_of(rows: list[dict], field: str):
@@ -226,6 +236,8 @@ def _summary_lines(rows: list[dict]) -> list[str]:
             g["profile"], g["prompt"], str(g["n"]), str(g["ok"]), str(g["goal_ok"]),
             *(_cell(g[f], g["n"]) for f in SHOWN),
         ]))  # fmt: skip
+        if g["assess"]:
+            body.append((section, f"assessment: {g['assess']} assessed runs passed"))
         if g["mcp_connected"]:
             body.append((section, f"MCP servers connected at start: {g['mcp_connected']}"))
     return _sectioned(["profile", "prompt", "n", "ok", "goal", *SHOWN], body, left=2)
