@@ -31,6 +31,8 @@ PROMPT = "Build a page that says Hello GitHub Pages.\n"
 FOLLOWUPS = ["First follow-up.", "Second follow-up."]
 PLUGIN = "superpowers@claude-plugins-official"
 GOAL = config.Goal(pages_live=True, homepage_is_pages=True, pages_wait_s=180)
+ASSESSMENT = config.Assessment(("page_ok", "browser_script"))
+SITE = {"status": "built", "html_url": "https://lab-org.github.io/lab-test1/"}
 
 
 class FakeGitHub:
@@ -349,6 +351,46 @@ class HeadlessRun(FakeClaude):
         self.assertEqual([c[2] for c in gh.calls if c[0] == "goal_ok"], [0, 0, 0])
         self.assertNotIn("waiting up to", self.out.getvalue())
 
+    def assessed(self, gh, outcome=([], []), **kwargs):
+        """run_headless with ASSESSMENT and assess.run replaced; returns (row, the assess.run mock)."""
+        with mock.patch.object(runner.assess, "run", return_value=outcome) as run, \
+             mock.patch.object(runner.preflight, "chrome_path", return_value="/chrome"):
+            row = self.run_headless(gh, assessment=ASSESSMENT, **kwargs)
+        return row, run
+
+    def test_assessment_runs_once_after_the_goal_is_reached(self):
+        gh = FakeGitHub(goal_ok=[False, True], pages_status=SITE)
+        row, run = self.assessed(gh, (["page_ok:content"], ["boom"]))
+        run.assert_called_once_with(ASSESSMENT, SITE["html_url"], self.lab_root, "/chrome")
+        self.assertEqual((row["assess_ok"], row["assess_failed"]), (False, "page_ok:content"))
+        self.assertEqual(row["status"], "ok")  # the assessment never changes the status
+        self.assertIn("test1: page error: boom", self.out.getvalue())
+        (csv_row,) = self.csv_rows()
+        self.assertEqual((csv_row["assess_ok"], csv_row["assess_failed"]), ("False", "page_ok:content"))
+
+    def test_passed_assessment(self):
+        row, _ = self.assessed(FakeGitHub(goal_ok=[True], pages_status=SITE))
+        self.assertEqual((row["assess_ok"], row["assess_failed"]), (True, ""))
+
+    def test_no_assessment_without_the_goal_or_the_file(self):
+        row, run = self.assessed(FakeGitHub(goal_ok=[], pages_status=None))
+        run.assert_not_called()
+        self.assertEqual((row["assess_ok"], row["assess_failed"]), (None, None))
+        with mock.patch.object(runner.assess, "run") as run:
+            row = self.run_headless(FakeGitHub(goal_ok=[True], pages_status=SITE))
+        run.assert_not_called()
+        self.assertIsNone(row["assess_ok"])
+
+    def test_assessment_time_is_not_in_the_duration(self):
+        def slow(*args):
+            time.sleep(1.5)
+            return [], []
+
+        with mock.patch.object(runner.assess, "run", side_effect=slow), \
+             mock.patch.object(runner.preflight, "chrome_path", return_value="/chrome"):
+            row = self.run_headless(FakeGitHub(goal_ok=[True], pages_status=SITE), assessment=ASSESSMENT)
+        self.assertLess(row["duration_s"], 1)
+
     def test_timeout_recorded(self):
         os.environ["FAKE_CLAUDE_SLEEP"] = "5"
         row = self.run_headless(FakeGitHub(goal_ok=[True]), timeout_s=1)
@@ -609,6 +651,13 @@ class Interactive(FakeClaude):
         self.assertTrue((run_dir / "statusline.json").is_file())
         self.assertTrue(any((run_dir / "projects").glob("*/*.jsonl")))
 
+    def test_interactive_assessment_after_the_goal(self):
+        with mock.patch.object(runner.assess, "run", return_value=(["browser_script:win"], [])) as run, \
+             mock.patch.object(runner.preflight, "chrome_path", return_value="/chrome"):
+            row = self.run_interactive(FakeGitHub(goal_ok=[True], pages_status=SITE), assessment=ASSESSMENT)
+        run.assert_called_once_with(ASSESSMENT, SITE["html_url"], self.lab_root, "/chrome")
+        self.assertEqual((row["assess_ok"], row["assess_failed"]), (False, "browser_script:win"))
+
     def test_interactive_uses_the_goal(self):
         gh = FakeGitHub(goal_ok=[True], pages_status={"status": "building"})
         self.run_interactive(gh, goal=config.Goal(pages_live=True, homepage_is_pages=False, pages_wait_s=30))
@@ -709,8 +758,10 @@ def load_cli():
 class RunCommand(unittest.TestCase):
     """`lab.py run` with the probe and the runner replaced; nothing is called for real."""
 
-    def run_tests(self, cfg, probe, selection="test1", repeat=None):
+    def run_tests(self, cfg, probe, selection="test1", repeat=None, assessment_file=None):
         cli = load_cli()
+        if assessment_file:
+            cli.ASSESSMENT_FILE = assessment_file
         row = dict.fromkeys(results.FIELDS) | {"status": "ok"}
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.object(cli.limits, "probe", return_value=probe), \
@@ -743,6 +794,15 @@ class RunCommand(unittest.TestCase):
         (call,) = run.call_args_list
         self.assertEqual(call.kwargs["goal"], config.load_goal(REPO / config.GOAL_FILE))
         self.assertEqual(call.kwargs["timeout_s"], 600)
+
+    def test_run_passes_the_assessment_file(self):
+        probe = {"five_hour_pct": 12, "seven_day_pct": 5}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "prompt-assessment.toml"
+            self.assertIsNone(self.run_tests({}, probe, assessment_file=path)[1].call_args.kwargs["assessment"])
+            path.write_text('[[check]]\ntype = "page_ok"\n')
+            run = self.run_tests({}, probe, assessment_file=path)[1]
+        self.assertEqual(run.call_args.kwargs["assessment"], config.Assessment(("page_ok",)))
 
     def test_gate_threshold_from_config(self):
         # 85 % left: enough by default, too little with LAB_LIMIT_MIN_PCT=90.
@@ -854,7 +914,12 @@ class SessionCommand(unittest.TestCase):
         (call,) = run.call_args_list
         self.assertEqual(call.args[1].model, "claude-sonnet-x")
         self.assertEqual(
-            call.kwargs, {"goal": config.load_goal(REPO / config.GOAL_FILE), "limit_start": 12, "prompt": True}
+            call.kwargs,
+            {
+                "goal": config.load_goal(REPO / config.GOAL_FILE),
+                "assessment": config.load_assessment(REPO / config.ASSESSMENT_FILE, REPO),
+                "limit_start": 12, "prompt": True,
+            },
         )
         self.assertIn("test1: ok · ctx_start 31115", out)
 

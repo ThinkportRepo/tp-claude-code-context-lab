@@ -45,6 +45,10 @@ NEEDS_GITHUB = {"setup", "run", "session"}
 # Profiles with MCP servers that npx starts and that drive Google Chrome.
 # A new profile with MCP servers belongs here, so its runs get both checks.
 MCP_PROFILES = {"dev-stack", "dev-messy"}
+ASSESSMENT_FILE = LAB_ROOT / config.ASSESSMENT_FILE
+# Why Google Chrome is needed, for the preflight error.
+CHROME_FOR_MCP = "the MCP profiles in lab/matrix.conf (their playwright MCP server, verified 2026-10-14)"
+CHROME_FOR_ASSESSMENT = f"the checks in {config.ASSESSMENT_FILE}"
 # teardown has to work with what is left: no Claude token (it may be gone
 # already), no npx, and an expired GitHub token only skips the repo part.
 TEARDOWN = "teardown"
@@ -77,14 +81,17 @@ def limit_min_pct(cfg: dict[str, str]) -> int:
     return int_setting(cfg, "LAB_LIMIT_MIN_PCT", limits.MIN_REMAINING_PCT, low=0, high=100)
 
 
-def prepare(command: str, args: argparse.Namespace, *, need_mcp: bool = False) -> dict[str, str]:
+def prepare(
+    command: str, args: argparse.Namespace, *, need_mcp: bool = False, need_assessment: bool = False
+) -> dict[str, str]:
     """Check the setup once before a command runs and return the config.
 
     Prints warnings; prints errors and exits with status 1 if there are any.
     Called for every command except `tokens`, which creates the credentials
     the checks look for, and `report`, which reads a local file only.
     `need_mcp`: the matrix uses one of MCP_PROFILES, so Node and Google
-    Chrome must be installed. Makes no network calls.
+    Chrome must be installed. `need_assessment`: an assessment file exists,
+    so Chrome must be installed. Makes no network calls.
     """
     cfg = env.load(ENV_FILE, os.environ)
     errors = [f"{ENV_FILE.name}: {problem}" for problem in env.file_problems(ENV_FILE, LAB_ROOT)]
@@ -99,7 +106,11 @@ def prepare(command: str, args: argparse.Namespace, *, need_mcp: bool = False) -
         cfg,
         need_github=command in NEEDS_GITHUB,
         need_node=need_mcp and command != TEARDOWN,
-        need_chrome=need_mcp and command != TEARDOWN,
+        chrome_needed_by=() if command == TEARDOWN else tuple(
+            reason
+            for reason, needed in ((CHROME_FOR_MCP, need_mcp), (CHROME_FOR_ASSESSMENT, need_assessment))
+            if needed
+        ),
         need_claude_token=command != TEARDOWN,
         timeout_s=timeout_s,
         now=datetime.now(timezone.utc),
@@ -184,6 +195,18 @@ def _load_goal() -> config.Goal | None:
         return None
 
 
+def _load_assessment() -> tuple[bool, config.Assessment | None]:
+    """(loaded, assessment) from ASSESSMENT_FILE; the assessment is None without the file.
+
+    (False, None) after printing the error of an invalid file.
+    """
+    try:
+        return True, config.load_assessment(ASSESSMENT_FILE, LAB_ROOT)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return False, None
+
+
 def _gate(cfg: dict[str, str]) -> tuple[bool, dict | None]:
     """Probe the usage limit and ask the gate; (may run, probe result)."""
     probe = limits.probe(LAB_ROOT, cfg)
@@ -209,7 +232,8 @@ def run_tests(cfg: dict[str, str], selection: str, repeat: int | None) -> int:
             print(f"error: REPEAT: {exc}", file=sys.stderr)
             return 1
     goal = _load_goal()
-    tests = _load_tests(cfg, selection) if goal else None
+    loaded, assessment = _load_assessment() if goal else (False, None)
+    tests = _load_tests(cfg, selection) if loaded else None
     if tests is None:
         return 1
 
@@ -225,7 +249,7 @@ def run_tests(cfg: dict[str, str], selection: str, repeat: int | None) -> int:
                     skipped += 1
                     break
                 row = runner.run_headless(
-                    LAB_ROOT, test, cfg, gh, goal=goal,
+                    LAB_ROOT, test, cfg, gh, goal=goal, assessment=assessment,
                     limit_start=probe["five_hour_pct"] if probe else None,
                     timeout_s=run_timeout_s(cfg),
                 )  # fmt: skip
@@ -246,7 +270,8 @@ def run_session(cfg: dict[str, str], test_id: str, prompt: bool) -> int:
         print("error: session takes one test id, not all", file=sys.stderr)
         return 1
     goal = _load_goal()
-    tests = _load_tests(cfg, test_id) if goal else None
+    loaded, assessment = _load_assessment() if goal else (False, None)
+    tests = _load_tests(cfg, test_id) if loaded else None
     if tests is None:
         return 1
     (test,) = tests
@@ -257,7 +282,7 @@ def run_session(cfg: dict[str, str], test_id: str, prompt: bool) -> int:
             print(f"skipping {test.id}: the usage-limit gate said no")
             return 1
         row = runner.run_interactive(
-            LAB_ROOT, test, cfg, gh, goal=goal,
+            LAB_ROOT, test, cfg, gh, goal=goal, assessment=assessment,
             limit_start=probe["five_hour_pct"] if probe else None, prompt=prompt,
         )  # fmt: skip
     except KeyboardInterrupt:
@@ -272,9 +297,10 @@ def run_session(cfg: dict[str, str], test_id: str, prompt: bool) -> int:
 
 
 def run_setup(cfg: dict[str, str]) -> int:
-    """`lab.py setup`: check org access, create sandbox dirs, show the matrix and the goal."""
+    """`lab.py setup`: check org access, create sandbox dirs, show the matrix, goal and assessment."""
     goal = _load_goal()
-    tests = _load_tests(cfg, "all") if goal else None
+    loaded, assessment = _load_assessment() if goal else (False, None)
+    tests = _load_tests(cfg, "all") if loaded else None
     if tests is None:
         return 1
     gh = github.GitHub(cfg["LAB_GH_ORG"], cfg["GH_TOKEN"], SANDBOX / ".gh")
@@ -291,6 +317,10 @@ def run_setup(cfg: dict[str, str]) -> int:
             effort = f"  {t.effort}" if t.effort else ""
             print(f"  {t.id:<{width}}  {t.profile:<12}  {t.prompt:<{prompt_width}}  {t.model}{effort}")
         print(f"Goal ({config.GOAL_FILE}): {config.describe_goal(goal)}")
+        if assessment:
+            print(f"Assessment ({config.ASSESSMENT_FILE}): {config.describe_assessment(assessment)}")
+        else:
+            print(f"Assessment: none (no {config.ASSESSMENT_FILE})")
         print(limits.limit_line(limits.probe(LAB_ROOT, cfg)))
     except KeyboardInterrupt:
         print("\ninterrupted", file=sys.stderr)
@@ -394,7 +424,8 @@ def main() -> int:
             except (OSError, ValueError) as exc:
                 print(f"error: {exc}", file=sys.stderr)
                 return 1
-        cfg = prepare(args.command, args, need_mcp=need_mcp)
+        need_assessment = args.command != TEARDOWN and ASSESSMENT_FILE.is_file()
+        cfg = prepare(args.command, args, need_mcp=need_mcp, need_assessment=need_assessment)
     if args.command == "run":
         return run_tests(cfg, args.test, args.repeat)
     if args.command == "session":

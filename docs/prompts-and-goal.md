@@ -1,8 +1,9 @@
 # Prompts and goal
 
-A test scenario consists of the prompts Claude gets and the goal that
-decides whether a run reached it. The follow-ups the runner sends while
-the goal is not reached are the same for every scenario.
+A test scenario consists of the prompts Claude gets, the goal that
+decides whether a run reached it, and an optional assessment of the
+finished app. The follow-ups the runner sends while the goal is not
+reached are the same for every scenario.
 
 ## Prompts
 
@@ -48,3 +49,35 @@ Whether the app works is not checked: such a check would change when
 follow-ups are sent, and with them the token counts. `python3 lab.py
 setup` shows the goal; a missing or invalid file stops `setup`, `run` and
 `session`.
+
+## Assessment
+
+`prompt-assessment.toml` in the lab root is optional. When it exists and a
+run reached its goal, the lab checks the published app once, after the
+last turn: outside `duration_s`, without follow-ups and without changing
+the run's status. `results.csv` records the result as `assess_ok` and
+`assess_failed` (the failed steps, e.g. `page_ok:no_errors`), and
+`python3 lab.py report` shows how many assessed runs passed. Each
+`[[check]]` names one type and loads the site fresh in headless Google
+Chrome:
+
+- `page_ok`: the page loads without JavaScript errors or failed requests
+  and shows content.
+- `reacts_to_clicks`: clicking buttons or elements with a click handler
+  changes the page, without errors.
+- `browser_script`: runs `prompt-assessment.js` from the lab root on the
+  loaded page. The script defines
+  `window.labAssess = async (document) => ({ step: true, ... })`; every
+  step that is not `true` fails.
+
+```toml
+[[check]]
+type = "page_ok"
+
+[[check]]
+type = "reacts_to_clicks"
+```
+
+`page_ok` and `reacts_to_clicks` work for any web app; `browser_script` is
+for what only the scenario knows, such as the rules of a game. With an
+assessment file, `setup`, `run` and `session` need Google Chrome.

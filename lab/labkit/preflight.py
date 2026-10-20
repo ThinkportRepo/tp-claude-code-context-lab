@@ -27,7 +27,7 @@ def check(
     *,
     need_github: bool,
     need_node: bool,
-    need_chrome: bool,
+    chrome_needed_by: tuple[str, ...],
     need_claude_token: bool = True,
     timeout_s: int,
     now: datetime,
@@ -36,11 +36,11 @@ def check(
 ) -> tuple[list[str], list[str]]:
     """Return (errors, warnings) for the current setup.
 
-    `need_node` and `need_chrome` are for profiles with MCP servers: their
-    servers start through `npx`, and the playwright server drives Google
-    Chrome. Without `npx` the servers do not start; without Chrome the
-    browser tools fail. Either way a run would not fail but measure a
-    different session, so both are errors.
+    `need_node` is for profiles with MCP servers, which start through
+    `npx`. `chrome_needed_by` names what needs Google Chrome (e.g. the
+    playwright MCP server of those profiles, or the assessment); empty if
+    nothing does. Without `npx` or Chrome a run would not fail but measure
+    a different session or skip its assessment, so both are errors.
     """
     errors: list[str] = []
     warnings: list[str] = []
@@ -53,11 +53,10 @@ def check(
         if not shutil.which(tool):
             errors.append(f"`{tool}` not found on PATH")
 
-    if need_chrome and not chrome_installed(home):
+    if chrome_needed_by and not chrome_installed(home):
         errors.append(
-            "Google Chrome is not installed, and lab/matrix.conf uses an MCP profile whose"
-            " playwright MCP server drives it (verified 2026-10-14); install Google Chrome"
-            " or remove the tests of that profile"
+            f"Google Chrome is not installed, but {' and '.join(chrome_needed_by)} need it;"
+            " install Google Chrome"
         )
 
     if need_claude_token and not cfg.get("CLAUDE_CODE_OAUTH_TOKEN"):
@@ -77,10 +76,18 @@ def check(
 
 def chrome_installed(home: Path, which=shutil.which) -> bool:
     """True if Google Chrome is installed: an app bundle on macOS, a command on PATH elsewhere."""
+    return chrome_path(home, which) is not None
+
+
+def chrome_path(home: Path, which=shutil.which) -> str | None:
+    """The Google Chrome executable, or None: in the app bundle on macOS, on PATH elsewhere."""
     if sys.platform == "darwin":
-        app_dirs = (*MACOS_APP_DIRS, home / "Applications")
-        return any((d / "Google Chrome.app").exists() for d in app_dirs)
-    return any(which(name) for name in CHROME_COMMANDS)
+        for d in (*MACOS_APP_DIRS, home / "Applications"):
+            app = d / "Google Chrome.app"
+            if app.exists():
+                return str(app / "Contents" / "MacOS" / "Google Chrome")
+        return None
+    return next((path for path in map(which, CHROME_COMMANDS) if path), None)
 
 
 def _check_github_expiry(

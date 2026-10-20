@@ -14,6 +14,7 @@ guesses.
 - Node.js with `npx` and Google Chrome, while `lab/matrix.conf` lists a
   test with the `dev-stack` or `dev-messy` profile; `setup`, `run` and
   `session` stop without them, also for a test of another profile
+- Google Chrome, while `prompt-assessment.toml` exists
 
 ## Quick start
 
@@ -93,8 +94,8 @@ test9    clean        prompt-simple.md        claude-sonnet-5   medium
 
 [docs/matrix.md](docs/matrix.md) describes the columns and has examples.
 [docs/prompts-and-goal.md](docs/prompts-and-goal.md) describes the prompt
-files, the follow-ups and `prompt-goal.toml`, the goal every test is
-checked against.
+files, the follow-ups, `prompt-goal.toml`, the goal every test is checked
+against, and the optional assessment of the finished app.
 
 ## Contributing and security
 
