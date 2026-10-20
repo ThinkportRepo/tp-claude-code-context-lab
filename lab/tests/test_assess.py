@@ -37,7 +37,21 @@ CLOCK = """<!doctype html><html><body><p id="t">0</p><button>does nothing</butto
 BODY_CLASS = """<!doctype html><html><body><p>theme</p><button>dark</button>
 <script>document.querySelector("button").addEventListener("click", () => document.body.classList.toggle("dark"));</script>
 </body></html>"""
-CHECKBOX = """<!doctype html><html><body><label><input type="checkbox"> remember</label></body></html>"""
+CHECKBOX = """<!doctype html><html><body><label><input type="checkbox"> remember</label><p id="s">off</p>
+<script>document.querySelector("input").addEventListener("change", (e) => {
+  document.getElementById("s").textContent = e.target.checked ? "on" : "off"; });</script></body></html>"""
+PLAIN_CHECKBOX = """<!doctype html><html><body><label><input type="checkbox"> remember</label></body></html>"""
+SLOW_CLOCK = """<!doctype html><html><body><p id="t">0</p><div id="b"></div>
+<script>let n = 0; setInterval(() => { document.getElementById("t").textContent = ++n; }, 1000);
+for (let i = 0; i < 9; i++) { const c = document.createElement("button"); c.onclick = () => {};
+  document.getElementById("b").append(c); }</script></body></html>"""
+ANIMATION = """<!doctype html><html><body><ul>""" + "<li>x</li>" * 8 + """</ul>
+<button>a</button><button>b</button><button>c</button>
+<script>const items = document.querySelectorAll("li"); let i = 0;
+setInterval(() => { items[i % 8].classList.toggle("on"); i++; }, 60);</script></body></html>"""
+SPLASH = """<!doctype html><html><body><p>loading</p><button>dead</button>
+<script>if (!sessionStorage.getItem("seen")) { sessionStorage.setItem("seen", "1");
+  setTimeout(() => { location.href = "./?game"; }, 800); }</script></body></html>"""
 CANVAS = """<!doctype html><html><body><canvas width="50" height="50"></canvas>
 <script>const c = document.querySelector("canvas");
 c.addEventListener("click", () => { const g = c.getContext("2d"); g.fillStyle = "red"; g.fillRect(0, 0, 50, 50); });
@@ -78,6 +92,21 @@ class Inject(unittest.TestCase):
         page = b"<!doctype html><!-- <head> --><html><head><title>t</title>"
         self.assertEqual(assess.inject(page, self.TAG),
                          b"<!doctype html><!-- <head> --><html><head>" + self.TAG + b"<title>t</title>")
+
+
+class LocalLocation(unittest.TestCase):
+    def test_a_redirect_on_the_site_stays_on_the_proxy(self):
+        for location in ("https://o.github.io/lab-x/?lab-check=12", "/lab-x/?lab-check=12"):
+            with self.subTest(location=location):
+                self.assertEqual(assess.local_location("https://o.github.io", location), ("/lab-x/", None))
+        self.assertEqual(
+            assess.local_location("https://o.github.io", "/a?v=2&lab-check=1"), ("/a?v=2", None)
+        )
+
+    def test_a_redirect_off_the_site_is_named(self):
+        location, problem = assess.local_location("https://o.github.io", "https://example.com/x")
+        self.assertEqual(location, "https://example.com/x")
+        self.assertEqual(problem, "redirected outside the site to https://example.com/x")
 
 
 class UpstreamUrl(unittest.TestCase):
@@ -186,6 +215,18 @@ class InChrome(unittest.TestCase):
         for name, page in (("body class", BODY_CLASS), ("checkbox", CHECKBOX), ("canvas", CANVAS)):
             with self.subTest(page=name):
                 self.assertEqual(self.run_checks(page, "reacts_to_clicks")[0], [])
+
+    def test_changes_slower_than_clicks_are_no_reaction(self):
+        for name, page in (("1 s clock", SLOW_CLOCK), ("animation over several nodes", ANIMATION)):
+            with self.subTest(page=name):
+                self.assertEqual(self.run_checks(page, "reacts_to_clicks")[0], ["reacts_to_clicks:reacts"])
+
+    def test_a_checkbox_alone_is_no_reaction(self):
+        # The browser toggles it without any script; only what the page does counts.
+        self.assertEqual(self.run_checks(PLAIN_CHECKBOX, "reacts_to_clicks")[0], ["reacts_to_clicks:reacts"])
+
+    def test_a_page_that_navigates_by_itself_is_no_reaction(self):
+        self.assertEqual(self.run_checks(SPLASH, "reacts_to_clicks")[0], ["reacts_to_clicks:reacts"])
 
     def test_a_reload_on_click_counts_as_a_reaction(self):
         self.assertEqual(self.run_checks(RELOADS, "reacts_to_clicks")[0], [])

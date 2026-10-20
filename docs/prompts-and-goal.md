@@ -65,14 +65,16 @@ Chrome:
 - `page_ok`: the page loads without JavaScript errors or failed script,
   stylesheet or image loads, and shows content.
 - `reacts_to_clicks`: clicking buttons, checkboxes or elements with a
-  click handler changes the page (or reloads it), without errors. Changes
-  that also happen without a click, such as a clock, do not count.
+  click handler changes the page (or reloads it), without errors. A
+  change counts only if it then stays put for 2 s, so a clock or an
+  animation does not count, nor does a checkbox the browser toggles while
+  the page does nothing with it.
 - `browser_script`: runs `prompt-assessment.js` from the lab root on the
   loaded page. The script defines
   `window.labAssess = async (document) => ({ step: true, ... })`; every
   step that is not `true` fails. It starts 500 ms after the page's `load`
-  event and has 10 s of virtual time, in which timers run without real
-  waiting. A page that reloads starts the script again.
+  event; the page has 30 s of virtual time in total, in which timers run
+  without real waiting. A page that reloads starts the script again.
 
 ```toml
 [[check]]

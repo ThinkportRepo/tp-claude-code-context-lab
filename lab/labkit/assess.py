@@ -32,7 +32,7 @@ from . import config
 from .github import without_credentials
 
 # Virtual time Chrome gives the page (timers run without real waiting).
-VIRTUAL_TIME_MS = 10000
+VIRTUAL_TIME_MS = 30000
 CHROME_TIMEOUT_S = 60
 _FETCH_TIMEOUT_S = 30
 _LAB_PATH = "/__lab__/"
@@ -77,9 +77,13 @@ PROBE = r"""(() => {
   });
 
   const tick = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  // What a click can change outside the DOM tree: form state and canvas pixels.
-  const formState = () => JSON.stringify([...document.querySelectorAll("input, select, textarea")]
-    .map((e) => [e.value, e.checked, e.selectedIndex]));
+  // How long reacts_to_clicks watches the page without clicking: what changes
+  // again within it (a clock, an animation) is the page's own doing.
+  const QUIET_MS = 2000;
+  // What a click can change outside the DOM tree: form state and canvas
+  // pixels. The clicked element's own state (a checkbox the browser toggles) does not count.
+  const formState = (clicked) => JSON.stringify([...document.querySelectorAll("input, select, textarea")]
+    .filter((e) => e !== clicked).map((e) => [e.value, e.checked, e.selectedIndex]));
   const pixels = () => [...document.querySelectorAll("canvas")]
     .map((c) => { try { return c.toDataURL(); } catch { return ""; } }).join();
   // The nodes that change while `action` runs and `ms` pass.
@@ -111,25 +115,39 @@ PROBE = r"""(() => {
       content: !!document.body && (document.body.innerText.trim() !== ""
         || !!document.body.querySelector("canvas, svg, img, video")),
     }),
-    // Clicks targets until one changes the page. Nodes that also change
-    // without a click (a clock, an animation) do not count; links and forms
-    // must not navigate away, and a click that reloads the page counts.
+    // Clicks targets until one changes the page. A changed node counts only
+    // if it then stays put for QUIET_MS without a click; links and forms must
+    // not navigate away, and a click that reloads the page counts.
     reacts_to_clicks: async () => {
       add.call(document, "click", (e) => { if (e.target.closest?.("a[href]")) e.preventDefault(); }, true);
       add.call(document, "submit", (e) => e.preventDefault(), true);
       const before = errors.length;
-      add.call(window, "pagehide",
-        () => sessionStorage.setItem(NAVIGATED, JSON.stringify(errors.slice(before))));
+      // beforeunload fires inside el.click() when the click navigates.
+      let clicking = false;
+      add.call(window, "beforeunload", () => {
+        if (clicking) sessionStorage.setItem(NAVIGATED, JSON.stringify(errors.slice(before)));
+      });
       const all = targets().slice(0, 50);
-      const idle = await changedNodes(() => {}, 100);
+      const startPixels = pixels();
+      const own = await changedNodes(() => {}, QUIET_MS);
+      const canvasMoves = pixels() !== startPixels;
       let reacts = false;
       for (const el of all) {
-        const form = formState();
+        const form = formState(el);
         const image = pixels();
-        const nodes = await changedNodes(() => el.click(), 100);
-        if ([...nodes].some((n) => !idle.has(n)) || formState() !== form || pixels() !== image) {
+        const nodes = await changedNodes(() => { clicking = true; el.click(); clicking = false; }, 100);
+        if (formState(el) !== form || (!canvasMoves && pixels() !== image)) {
           reacts = true;
           break;
+        }
+        const fresh = [...nodes].filter((n) => !own.has(n));
+        if (fresh.length) {
+          const again = await changedNodes(() => {}, QUIET_MS);
+          again.forEach((n) => own.add(n));
+          if (fresh.some((n) => !again.has(n))) {
+            reacts = true;
+            break;
+          }
         }
       }
       return { clickable: all.length > 0, reacts, no_errors: errors.length === before };
@@ -215,6 +233,18 @@ def inject(page: bytes, tags: bytes) -> bytes:
     return page[:at] + tags + page[at:]
 
 
+def local_location(upstream: str, location: str) -> tuple[str, str | None]:
+    """A redirect's Location for Chrome: back onto the proxy, without the cache-busting query.
+
+    A Location on another host or scheme stays as it is, so Chrome leaves
+    the proxy and the page gets no probe; the second value names that.
+    """
+    location = _CHECK_PARAM.sub("", location.removeprefix(upstream))
+    if urllib.parse.urlsplit(location).netloc:
+        return location, f"redirected outside the site to {location}"
+    return location, None
+
+
 def upstream_url(upstream: str, path: str) -> str:
     """The site URL for `path`, with a cache-busting query, as the goal check uses."""
     url = upstream + path
@@ -279,8 +309,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             status, ctype, body = 502, "text/plain", b"upstream failed"
         if "text/html" in ctype:
             body = inject(body, self.server.tags)
-        if location:  # back onto the proxy, without the cache-busting query
-            location = _CHECK_PARAM.sub("", location.removeprefix(self.server.upstream))
+        if location:
+            location, problem = local_location(self.server.upstream, location)
+            if problem:
+                self.server.problems.append(f"{self.path}: {problem}")
         self._send(status, ctype, body, location)
 
     def _send(self, status: int, ctype: str, body: bytes, location: str | None = None) -> None:
