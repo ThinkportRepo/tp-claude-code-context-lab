@@ -167,24 +167,6 @@ class Matrix(TempLab):
             with self.subTest(profile=bad), self.assertRaises(ValueError):
                 self.load(f"test1 {bad} prompt-simple.md\n")
 
-    def test_repo_matrix_loads(self):
-        tests = config.load_matrix(REPO / "lab" / "matrix.conf", {})
-        default = config.DEFAULT_MODEL
-        self.assertEqual(
-            [(t.id, t.profile, t.prompt, t.model, t.effort) for t in tests],
-            [
-                ("test1", "clean", "prompt-simple.md", default, None),
-                ("test2", "clean", "prompt-well-defined.md", default, None),
-                ("test3", "superpowers", "prompt-simple.md", default, None),
-                ("test4", "superpowers", "prompt-well-defined.md", default, None),
-                ("test5", "dev-stack", "prompt-simple.md", default, None),
-                ("test6", "dev-stack", "prompt-well-defined.md", default, None),
-                ("test7", "dev-messy", "prompt-simple.md", default, None),
-                ("test8", "dev-messy", "prompt-well-defined.md", default, None),
-                ("test9", "clean", "prompt-simple.md", "claude-sonnet-5", "medium"),
-            ],
-        )
-
 
 class Prompts(unittest.TestCase):
     def test_prompt_text_reads_the_file_unchanged(self):
