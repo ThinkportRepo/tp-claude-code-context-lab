@@ -482,8 +482,9 @@ class CliWiring(TempLab):
         self.assertTrue(self.uses_mcp("test1 clean prompt-simple.md\ntest2 dev-stack prompt-simple.md\n"))
         self.assertTrue(self.uses_mcp("test1 clean prompt-simple.md\ntest2 dev-messy prompt-simple.md\n"))
 
-    def test_repo_matrix_uses_mcp(self):
-        self.assertTrue(self.load_lab_module().matrix_uses_mcp())
+    def test_repo_matrix_is_valid(self):
+        # Only its syntax: which tests the shipped matrix lists is up to the file.
+        config.load_matrix(REPO / "lab" / "matrix.conf", {})
 
     def test_run_and_session_stop_on_a_missing_goal_file(self):
         cli = self.load_lab_module()

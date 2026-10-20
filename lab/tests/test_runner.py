@@ -845,13 +845,14 @@ class RunCommand(unittest.TestCase):
         self.assertIn("skipping test1", out)
 
     def test_run_stops_on_runtime_error(self):
-        cli = load_cli_with_matrix(self)
+        cli = load_cli_with_matrix(self, "test1 clean prompt-simple.md\ntest2 clean prompt-well-defined.md\n")
         err = io.StringIO()
         with mock.patch.object(cli.limits, "probe", return_value={"five_hour_pct": 1, "seven_day_pct": 1}), \
-             mock.patch.object(cli.runner, "run_headless", side_effect=RuntimeError("install failed")), \
+             mock.patch.object(cli.runner, "run_headless", side_effect=RuntimeError("install failed")) as run, \
              mock.patch.object(sys.stdin, "isatty", return_value=False), \
              redirect_stdout(io.StringIO()), redirect_stderr(err):
             self.assertEqual(cli.run_tests(CFG, "all", 1), 1)
+        self.assertEqual(run.call_count, 1)  # test2 never starts
         self.assertIn("error: install failed", err.getvalue())
 
     def test_run_rejects_bad_repeat_and_unknown_test(self):
@@ -871,7 +872,7 @@ class ResultsHeader(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.csv = Path(tmp.name) / "results.csv"
-        self.cli = load_cli()
+        self.cli = load_cli_with_matrix(self)
         self.cli.LAB_ROOT = Path(tmp.name)
         patches = (
             mock.patch.object(self.cli.env, "load", return_value=dict(CFG)),

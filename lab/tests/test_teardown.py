@@ -552,7 +552,7 @@ class Cli(unittest.TestCase):
 
     # setup
 
-    def setup_cmd(self, *, org_ok=True, probe=None, matrix=None):
+    def setup_cmd(self, *, org_ok=True, probe=None, matrix="test1 clean\n"):
         calls = []
 
         def fake_run(argv, **kwargs):
@@ -565,24 +565,28 @@ class Cli(unittest.TestCase):
              mock.patch.object(self.cli.subprocess, "run", side_effect=fake_run), \
              mock.patch.object(self.cli.preflight, "chrome_installed") as chrome_mock, \
              mock.patch.object(self.cli.limits, "probe", return_value=probe) as probe_mock:
-            if matrix is not None:
-                matrix_file = self.lab_root / "lab" / "matrix.conf"
-                matrix_file.parent.mkdir()
-                matrix_file.write_text(matrix)
-                self.cli.MATRIX_FILE = matrix_file
-                (self.lab_root / "lab" / "profiles").symlink_to(REPO / "lab" / "profiles")
-                for name in ("prompt-simple.md", "prompt-well-defined.md"):
-                    (self.lab_root / name).write_text((REPO / name).read_text())
+            # A matrix of its own, so the shipped test list does not matter.
+            matrix_file = self.lab_root / "lab" / "matrix.conf"
+            matrix_file.parent.mkdir(exist_ok=True)
+            matrix_file.write_text(matrix)
+            self.cli.MATRIX_FILE = matrix_file
+            profiles = self.lab_root / "lab" / "profiles"
+            if not profiles.exists():
+                profiles.symlink_to(REPO / "lab" / "profiles")
+            for name in ("prompt-simple.md", "prompt-well-defined.md"):
+                (self.lab_root / name).write_text((REPO / name).read_text())
             result = self.call(self.cli.run_setup, self.cfg)
         return result, calls, probe_mock, chrome_mock
 
     def test_setup_creates_dirs_and_prints_matrix(self):
-        (code, out, err), calls, probe, _ = self.setup_cmd(probe={"five_hour_pct": 12, "seven_day_pct": 5})
+        matrix = "test1 clean\ntest2 superpowers prompt-well-defined.md\n"
+        (code, out, err), calls, probe, _ = self.setup_cmd(
+            probe={"five_hour_pct": 12, "seven_day_pct": 5}, matrix=matrix
+        )
         self.assertEqual(code, 0)
         self.assertEqual(calls, [])  # nothing is installed or run
         self.assertEqual(err, "")
-        tests = config.load_matrix(REPO / "lab" / "matrix.conf", {})
-        for test in tests:
+        for test in config.load_matrix(self.cli.MATRIX_FILE, {}):
             self.assertTrue((self.lab_root / "sandbox" / test.id).is_dir())
             self.assertIn(test.id, out)
             self.assertIn(test.model, out)
