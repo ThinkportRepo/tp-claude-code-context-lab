@@ -32,6 +32,23 @@ BROKEN = """<!doctype html><html><head><script src="missing.js"></script></head>
 <body><button onclick="this.textContent='x'">go</button></body></html>"""
 STATIC = "<!doctype html><html><body><h1>Hello GitHub Pages</h1></body></html>"
 EMPTY = "<!doctype html><html><body></body></html>"
+CLOCK = """<!doctype html><html><body><p id="t">0</p><button>does nothing</button>
+<script>let n = 0; setInterval(() => { document.getElementById("t").textContent = ++n; }, 20);</script></body></html>"""
+BODY_CLASS = """<!doctype html><html><body><p>theme</p><button>dark</button>
+<script>document.querySelector("button").addEventListener("click", () => document.body.classList.toggle("dark"));</script>
+</body></html>"""
+CHECKBOX = """<!doctype html><html><body><label><input type="checkbox"> remember</label></body></html>"""
+CANVAS = """<!doctype html><html><body><canvas width="50" height="50"></canvas>
+<script>const c = document.querySelector("canvas");
+c.addEventListener("click", () => { const g = c.getContext("2d"); g.fillStyle = "red"; g.fillRect(0, 0, 50, 50); });
+</script></body></html>"""
+RELOADS = """<!doctype html><html><body><p>game</p><button onclick="location.reload()">New game</button></body></html>"""
+DELEGATED = """<!doctype html><html><body><p id="s">X</p><div id="b"><div class="c"></div><div class="c"></div></div>
+<script>document.addEventListener("click", (e) => {
+  if (e.target.classList.contains("c")) e.target.textContent = "X"; });</script></body></html>"""
+VISITS = """<!doctype html><html><body><p id="n"></p>
+<script>const n = Number(localStorage.getItem("visits") || 0) + 1; localStorage.setItem("visits", n);
+document.getElementById("n").textContent = n;</script></body></html>"""
 THROWS = """<!doctype html><html><body><p>text</p><button>b</button>
 <script>document.querySelector("button").onclick = () => { throw new Error("boom"); };</script></body></html>"""
 
@@ -51,6 +68,23 @@ class Inject(unittest.TestCase):
 
     def test_at_the_start_without_either(self):
         self.assertEqual(assess.inject(b"<p>hi</p>", self.TAG), self.TAG + b"<p>hi</p>")
+
+    def test_after_the_doctype_without_either(self):
+        # Before the doctype the page would render in quirks mode.
+        self.assertEqual(assess.inject(b"<!DOCTYPE html><title>t</title>", self.TAG),
+                         b"<!DOCTYPE html>" + self.TAG + b"<title>t</title>")
+
+    def test_tags_in_comments_are_skipped(self):
+        page = b"<!doctype html><!-- <head> --><html><head><title>t</title>"
+        self.assertEqual(assess.inject(page, self.TAG),
+                         b"<!doctype html><!-- <head> --><html><head>" + self.TAG + b"<title>t</title>")
+
+
+class UpstreamUrl(unittest.TestCase):
+    def test_cache_busting_query_is_added_or_appended(self):
+        url = assess.upstream_url("https://o.github.io", "/lab-x/")
+        self.assertRegex(url, r"^https://o\.github\.io/lab-x/\?lab-check=\d+$")
+        self.assertRegex(assess.upstream_url("https://o.github.io", "/a.js?v=2"), r"/a\.js\?v=2&lab-check=\d+$")
 
 
 class Result(unittest.TestCase):
@@ -122,20 +156,49 @@ class InChrome(unittest.TestCase):
         failed, _ = self.run_checks(GAME, "browser_script", files={"app.js": GAME_JS}, script=script)
         self.assertEqual(failed, ["browser_script:cells"])
 
-    def test_each_check_gets_a_fresh_page(self):
-        # reacts_to_clicks marks a cell; the script must still see an empty board.
-        script = (
-            "window.labAssess = async (doc) =>"
-            " ({ empty: [...doc.querySelectorAll('#board div')].every((c) => !c.textContent) });\n"
-        )
-        failed, _ = self.run_checks(
-            GAME, "reacts_to_clicks", "browser_script", files={"app.js": GAME_JS}, script=script
-        )
+    def test_each_check_gets_a_fresh_browser(self):
+        # The page counts its visits in localStorage; each check must be the first visit.
+        script = "window.labAssess = async (doc) => ({ first: doc.getElementById('n').textContent === '1' });\n"
+        failed, _ = self.run_checks(VISITS, "page_ok", "browser_script", script=script)
         self.assertEqual(failed, [])
 
-    def test_an_unreachable_site_fails_every_check(self):
-        failed, _ = assess.run(config.Assessment(("page_ok",)), "http://127.0.0.1:9/lab-x/", self.root, CHROME)
+    def test_an_unreachable_site_fails_with_the_reason(self):
+        failed, errors = assess.run(config.Assessment(("page_ok",)), "http://127.0.0.1:9/lab-x/", self.root, CHROME)
         self.assertEqual(failed, ["page_ok:no_result"])
+        self.assertIn("/lab-x/", errors[0])
+
+    def test_a_chrome_that_fails_is_reported(self):
+        (self.site / "index.html").write_text(STATIC)
+        failed, errors = assess.run(config.Assessment(("page_ok",)), self.url, self.root, str(self.root / "nochrome"))
+        self.assertEqual(failed, ["page_ok:chrome_failed"])
+        self.assertTrue(errors)
+
+    def test_a_step_that_is_not_true_fails_even_if_undefined(self):
+        script = "window.labAssess = async (doc) => ({ ok: true, board: doc.querySelector('#nope')?.isConnected });\n"
+        failed, _ = self.run_checks(STATIC, "browser_script", script=script)
+        self.assertEqual(failed, ["browser_script:board"])
+
+    def test_a_page_that_changes_by_itself_is_no_reaction(self):
+        failed, _ = self.run_checks(CLOCK, "reacts_to_clicks")
+        self.assertEqual(failed, ["reacts_to_clicks:reacts"])
+
+    def test_reactions_outside_the_body_markup_count(self):
+        for name, page in (("body class", BODY_CLASS), ("checkbox", CHECKBOX), ("canvas", CANVAS)):
+            with self.subTest(page=name):
+                self.assertEqual(self.run_checks(page, "reacts_to_clicks")[0], [])
+
+    def test_a_reload_on_click_counts_as_a_reaction(self):
+        self.assertEqual(self.run_checks(RELOADS, "reacts_to_clicks")[0], [])
+
+    def test_a_handler_on_the_document_is_found(self):
+        self.assertEqual(self.run_checks(DELEGATED, "reacts_to_clicks")[0], [])
+
+    def test_a_redirect_reaches_chrome(self):
+        # The server redirects /lab-x to /lab-x/; app.js must resolve against the new URL.
+        (self.site / "index.html").write_text(GAME)
+        (self.site / "app.js").write_text(GAME_JS)
+        url = self.url.rstrip("/")
+        self.assertEqual(assess.run(config.Assessment(("page_ok",)), url, self.root, CHROME), ([], []))
 
 
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):
