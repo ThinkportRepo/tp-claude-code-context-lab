@@ -69,7 +69,8 @@ Chrome:
   changes during 2 s without clicks, such as a clock or an animation, does
   not count, nor do inputs the browser toggles by itself (a checkbox, a
   radio group). Changes that repeat more slowly or start later can still
-  make a page pass.
+  make a page pass, and a page whose clicks only act on input (an empty
+  to-do item, a form with required fields) fails.
 - `browser_script`: runs `prompt-assessment.js` from the lab root on the
   loaded page. The script defines
   `window.labAssess = async (document) => ({ step: true, ... })`; every

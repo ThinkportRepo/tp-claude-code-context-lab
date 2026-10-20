@@ -129,15 +129,15 @@ PROBE = r"""(() => {
     // Clicks targets until one changes the page. Nodes that changed during
     // QUIET_MS without a click do not count, so changes that repeat slower
     // or start later can still pass. Links and forms must not navigate away;
-    // a click that reloads the page (within the click window) counts.
+    // a navigation after the first click counts as the click's.
     reacts_to_clicks: async () => {
       add.call(document, "click", (e) => { if (e.target.closest?.("a[href]")) e.preventDefault(); }, true);
       add.call(document, "submit", (e) => e.preventDefault(), true);
       const before = errors.length;
-      // Set while a click and its window run; a navigation then is the click's.
-      let clicking = false;
+      // Set at the first click; a later navigation (also from a timer) is the click's.
+      let clicked = false;
       add.call(window, "beforeunload", () => {
-        if (clicking) sessionStorage.setItem(NAVIGATED, JSON.stringify(errors.slice(before)));
+        if (clicked) sessionStorage.setItem(NAVIGATED, JSON.stringify(errors.slice(before)));
       });
       const all = targets().slice(0, 50);
       const startPixels = pixels();
@@ -148,9 +148,8 @@ PROBE = r"""(() => {
         const ignored = toggledByBrowser(el);
         const form = formState(ignored);
         const image = pixels();
-        clicking = true;
+        clicked = true;
         const nodes = await changedNodes(() => el.click(), 100);
-        clicking = false;
         if ([...nodes].some((n) => !own.has(n)) || formState(ignored) !== form
             || (!canvasMoves && pixels() !== image)) {
           reacts = true;

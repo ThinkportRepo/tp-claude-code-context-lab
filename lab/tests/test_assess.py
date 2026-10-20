@@ -65,7 +65,7 @@ RADIOS = """<!doctype html><html><body><label><input type="radio" name="m"> easy
 LABEL = """<!doctype html><html><body><input type="checkbox" id="x"><label for="x">sound</label>
 <script>document.addEventListener("click", () => {});</script></body></html>"""
 LATER_RELOAD = """<!doctype html><html><body><p>game</p>
-<button onclick="setTimeout(() => location.reload(), 0)">New game</button></body></html>"""
+<button onclick="setTimeout(() => location.reload(), __DELAY__)">New game</button></body></html>"""
 SPLASH = """<!doctype html><html><body><p>loading</p><button>dead</button>
 <script>if (!sessionStorage.getItem("seen")) { sessionStorage.setItem("seen", "1");
   setTimeout(() => { location.href = "./?game"; }, 800); }</script></body></html>"""
@@ -248,8 +248,11 @@ class InChrome(unittest.TestCase):
             with self.subTest(page=name):
                 self.assertEqual(self.run_checks(page, "reacts_to_clicks")[0], ["reacts_to_clicks:reacts"])
 
-    def test_a_reload_started_just_after_the_click_counts(self):
-        self.assertEqual(self.run_checks(LATER_RELOAD, "reacts_to_clicks")[0], [])
+    def test_a_reload_started_after_the_click_counts(self):
+        # Also after the click window: the page must not reload until Chrome times out.
+        for delay in ("0", "400"):
+            with self.subTest(delay=delay):
+                self.assertEqual(self.run_checks(LATER_RELOAD.replace("__DELAY__", delay), "reacts_to_clicks")[0], [])
 
     def test_a_page_that_navigates_by_itself_is_no_reaction(self):
         self.assertEqual(self.run_checks(SPLASH, "reacts_to_clicks")[0], ["reacts_to_clicks:reacts"])
