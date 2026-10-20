@@ -365,8 +365,9 @@ class PluginVersions(TempRoot):
 class FakeGitHub:
     token = "ghu_fake"
 
-    def __init__(self, exists):
+    def __init__(self, exists, create_fails=0):
         self.exists = exists
+        self.create_fails = create_fails  # create_repo raises this many times first
         self.calls = []
 
     def git_env(self):
@@ -381,6 +382,9 @@ class FakeGitHub:
 
     def create_repo(self, name):
         self.calls.append(("create", name))
+        if self.create_fails:
+            self.create_fails -= 1
+            raise sandbox.GitHubError("gh repo create failed: secondary rate limit")
         return f"https://github.com/org/{name}.git"
 
 
@@ -403,6 +407,39 @@ class ResetRepo(TempRoot):
             sandbox.reset_repo(gh, "t1", self.p.repo, lab_root=self.lab_root)
         self.assertEqual(gh.calls, [("exists", "lab-t1"), ("create", "lab-t1")])
         self.assertTrue(self.p.repo.is_dir())
+
+    def reset_with_pauses(self, gh):
+        err = io.StringIO()
+        with mock.patch.object(sandbox, "configure_repo"), \
+             mock.patch.object(sandbox.time, "sleep") as sleep, redirect_stderr(err):
+            sandbox.reset_repo(gh, "t1", self.p.repo, lab_root=self.lab_root)
+        return [c.args[0] for c in sleep.call_args_list], err.getvalue()
+
+    def test_retries_when_github_refuses(self):
+        gh = FakeGitHub(exists=False, create_fails=2)
+        pauses, err = self.reset_with_pauses(gh)
+        self.assertEqual(pauses, list(sandbox.RESET_PAUSES_S))
+        self.assertEqual([c for c in gh.calls if c[0] == "create"], [("create", "lab-t1")] * 3)
+        self.assertIn("secondary rate limit", err)
+
+    def test_gives_up_after_the_last_pause(self):
+        gh = FakeGitHub(exists=False, create_fails=len(sandbox.RESET_PAUSES_S) + 1)
+        with self.assertRaises(sandbox.GitHubError):
+            self.reset_with_pauses(gh)
+
+    def test_a_retry_deletes_a_repo_the_failed_attempt_created(self):
+        # GitHub may create the repo and still report an error; the retry starts from scratch.
+        gh = FakeGitHub(exists=False, create_fails=1)
+        original = gh.create_repo
+
+        def create_then_exist(name):
+            gh.exists = True
+            return original(name)
+
+        gh.create_repo = create_then_exist
+        self.reset_with_pauses(gh)
+        self.assertEqual(gh.calls, [("exists", "lab-t1"), ("create", "lab-t1"),
+                                    ("exists", "lab-t1"), ("delete", "lab-t1"), ("create", "lab-t1")])
 
     def assert_refused(self, test_id, repo_dir):
         (repo_dir).mkdir(parents=True, exist_ok=True)
