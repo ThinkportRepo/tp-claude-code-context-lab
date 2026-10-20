@@ -415,14 +415,29 @@ class HeadlessRun(FakeClaude):
         (csv_row,) = self.csv_rows()
         self.assertEqual(csv_row["status"], "timeout")
 
-    def test_keyboard_interrupt_recorded(self):
+    def test_a_run_that_never_starts_claude_records_nothing(self):
+        # It holds no measurement: the repo reset or the setup failed, or Ctrl+C came first.
         gh = FakeGitHub(delete_raises=KeyboardInterrupt())
         with self.assertRaises(KeyboardInterrupt):
             self.run_headless(gh)
+        self.assertEqual(self.csv_rows(), [])
+        self.assertEqual(self.p_calls(), [])
+        self.assertIn("test1: not recorded: the run failed before Claude started", self.err.getvalue())
+
+    def test_keyboard_interrupt_during_a_turn_recorded(self):
+        os.environ["FAKE_CLAUDE_SLEEP"] = "5"
+
+        def interrupt_once_claude_runs():
+            deadline = time.monotonic() + 10
+            while not self.p_calls() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            os.kill(os.getpid(), signal.SIGINT)
+
+        threading.Thread(target=interrupt_once_claude_runs, daemon=True).start()
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_headless(FakeGitHub(goal_ok=[True]))
         (csv_row,) = self.csv_rows()
         self.assertEqual(csv_row["status"], "failed")
-        self.assertEqual(csv_row["test"], "test1")
-        self.assertEqual(self.p_calls(), [])
 
     def test_no_transcript_still_recorded(self):
         os.environ["FAKE_CLAUDE_NO_TRANSCRIPT"] = "1"
@@ -513,13 +528,12 @@ class HeadlessRun(FakeClaude):
         self.run_headless(FakeGitHub(goal_ok=[True]))
         self.assertEqual([c for c in self.calls() if c["argv"][:1] == ["plugin"]], [])
 
-    def test_install_failure_recorded(self):
+    def test_install_failure_records_nothing(self):
         os.environ["FAKE_CLAUDE_PLUGIN_FAIL"] = "1"
         test = config.Test("test3", "superpowers", "prompt-simple.md", MODEL)
         with self.assertRaises(RuntimeError):
             self.run_headless(FakeGitHub(goal_ok=[True]), test)
-        (csv_row,) = self.csv_rows()
-        self.assertEqual(csv_row["status"], "failed")
+        self.assertEqual(self.csv_rows(), [])
         self.assertEqual(self.p_calls(), [])
 
     def test_install_time_not_in_run_budget(self):
@@ -673,6 +687,13 @@ class Interactive(FakeClaude):
             row = self.run_interactive(FakeGitHub(goal_ok=[True], pages_status=SITE), assessment=ASSESSMENT)
         run.assert_called_once_with(ASSESSMENT, SITE["html_url"], self.lab_root, "/chrome")
         self.assertEqual((row["assess_ok"], row["assess_failed"]), (False, "browser_script:win"))
+
+    def test_a_session_that_never_starts_claude_records_nothing(self):
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_interactive(FakeGitHub(delete_raises=KeyboardInterrupt()))
+        self.assertEqual(self.csv_rows(), [])
+        self.assertEqual(self.sessions(), [])
+        self.assertIn("not recorded", self.err.getvalue())
 
     def test_interactive_uses_the_goal(self):
         gh = FakeGitHub(goal_ok=[True], pages_status={"status": "building"})

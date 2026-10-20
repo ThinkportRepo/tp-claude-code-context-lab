@@ -41,7 +41,8 @@ names the file and line.
 
 Run one test with `python3 lab.py run <id>`, all tests with
 `python3 lab.py run all`. `REPEAT=n` in `.env`, or `--repeat n`, runs each
-test n times. Each run adds a row to `results.csv` in the lab root;
+test n times. Each run that starts Claude adds a row to `results.csv` in
+the lab root (a run that fails before, e.g. on the repo reset, adds none);
 `python3 lab.py report` summarizes all recorded runs.
 
 Each example below is a complete `lab/matrix.conf`, so `run all` runs
