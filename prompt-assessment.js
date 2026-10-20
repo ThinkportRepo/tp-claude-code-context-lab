@@ -8,13 +8,15 @@
 // O's moves may come from a second player or from the computer: if no other
 // cell is marked within 1.5 s of X's first move, the script plays O itself
 // (X 0, 1, 2 against O 3, 4); otherwise X takes free cells until the game ends.
-// The end counts in any words: win, lose, draw, tie or game over. A game that
+// The end counts in any words, in English or German: win, lose, draw, tie,
+// game over, gewinnt, verloren, unentschieden, Spiel vorbei. A game that
 // reloads the page at the end starts the script again; what it saved before
 // each move lets it finish instead of playing again. Not covered: a start
 // screen or dialog before the board.
 window.labAssess = async (document) => {
   const SAVED = "lab-tic-tac-toe";
-  const RESULT = /\b(wins?|won|winner|lose|loses|lost|loser|draw|tied?|game over)\b/i;
+  const RESULT = new RegExp("\\b(wins?|won|winner|lose|loses|lost|loser|draw|tied?|game over"
+    + "|gewinnt|gewonnen|gewinner|verliert|verloren|verlierer|unentschieden|spiel vorbei)\\b", "i");
   const saved = JSON.parse(sessionStorage.getItem(SAVED));
   let pending = null; // what a reload during the next move must keep
   const save = () => sessionStorage.setItem(SAVED, JSON.stringify({ ...pending, alerts }));
