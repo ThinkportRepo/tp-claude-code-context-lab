@@ -1,0 +1,11 @@
+# Checks of the finished game, run once after a run reached its goal; they
+# never trigger follow-ups (docs/prompts-and-goal.md).
+
+[[check]]
+type = "page_ok"
+
+[[check]]
+type = "reacts_to_clicks"
+
+[[check]]
+type = "browser_script"
