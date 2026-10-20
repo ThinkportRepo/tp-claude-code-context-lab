@@ -225,15 +225,23 @@ def _build_wait(test: config.Test, gh: GitHub, goal: config.Goal) -> int:
 
 
 def _assess(lab_root: Path, test: config.Test, gh: GitHub, assessment: config.Assessment) -> dict:
-    """Run `assessment` against the test's Pages site; the row's assess_ok and assess_failed."""
-    status = gh.pages_status(f"lab-{test.id}")
-    url = status.get("html_url") if status else None
+    """Run `assessment` against the test's Pages site; the row's assess_ok and assess_failed.
+
+    Never fails the run: an error on the way (GitHub, Chrome, the proxy)
+    fails the assessment as "assessment:error".
+    """
     print(f"{test.id}: assessing the app ({config.describe_assessment(assessment)})")
-    chrome = preflight.chrome_path(Path.home())
-    if not url or not chrome:
-        failed, errors = [f"assessment:{'no_site' if not url else 'no_chrome'}"], []
-    else:
-        failed, errors = assess.run(assessment, url, lab_root, chrome)
+    try:
+        status = gh.pages_status(f"lab-{test.id}")
+        url = status.get("html_url") if status else None
+        chrome = preflight.chrome_path(Path.home())
+        if not url or not chrome:
+            failed, errors = [f"assessment:{'no_site' if not url else 'no_chrome'}"], []
+        else:
+            failed, errors = assess.run(assessment, url, lab_root, chrome)
+    except Exception as exc:  # whatever fails here fails the assessment, never the run
+        print(f"{test.id}: assessment error: {exc}")
+        failed, errors = ["assessment:error"], []
     for error in errors[:3]:
         print(f"{test.id}: page error: {error}")
     print(f"{test.id}: assessment {'passed' if not failed else 'failed: ' + ', '.join(failed)}")

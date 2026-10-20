@@ -381,6 +381,22 @@ class HeadlessRun(FakeClaude):
         run.assert_not_called()
         self.assertIsNone(row["assess_ok"])
 
+    def test_assessment_without_site_or_chrome(self):
+        for site, chrome, failed in ((None, "/chrome", "assessment:no_site"), (SITE, None, "assessment:no_chrome")):
+            with self.subTest(failed=failed), \
+                 mock.patch.object(runner.assess, "run") as run, \
+                 mock.patch.object(runner.preflight, "chrome_path", return_value=chrome):
+                row = self.run_headless(FakeGitHub(goal_ok=[True], pages_status=site), assessment=ASSESSMENT)
+            run.assert_not_called()
+            self.assertEqual((row["assess_ok"], row["assess_failed"]), (False, failed))
+
+    def test_an_assessment_error_fails_the_assessment_not_the_run(self):
+        with mock.patch.object(runner.assess, "run", side_effect=OSError("port in use")), \
+             mock.patch.object(runner.preflight, "chrome_path", return_value="/chrome"):
+            row = self.run_headless(FakeGitHub(goal_ok=[True], pages_status=SITE), assessment=ASSESSMENT)
+        self.assertEqual((row["status"], row["assess_ok"], row["assess_failed"]), ("ok", False, "assessment:error"))
+        self.assertIn("assessment error: port in use", self.out.getvalue())
+
     def test_assessment_time_is_not_in_the_duration(self):
         def slow(*args):
             time.sleep(1.5)
