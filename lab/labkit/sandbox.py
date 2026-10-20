@@ -11,15 +11,19 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from types import SimpleNamespace
 
 from . import config
-from .github import GitHub, configure_repo, gh_env
+from .github import GitHub, GitHubError, configure_repo, gh_env
 
 STATUSLINE_PY = Path(__file__).resolve().with_name("statusline.py")
 REPO_DIRNAME = "xyz"
+# Pauses before retrying a repo reset GitHub refused (e.g. a secondary rate
+# limit on creating repos); the run's clock has not started yet.
+RESET_PAUSES_S = (30, 90)
 
 
 def paths(lab_root: Path, test_id: str) -> SimpleNamespace:
@@ -367,15 +371,26 @@ def reset_repo(gh: GitHub, test_id: str, repo_dir: Path, *, lab_root: Path) -> N
     """Give the test a fresh, empty GitHub repo and an initialised local checkout.
 
     Wipes only the test's own checkout, `<lab_root>/sandbox/<test_id>/xyz`; any
-    other directory is refused before anything is deleted or called.
+    other directory is refused before anything is deleted or called. If
+    GitHub refuses the delete or create, the reset starts over after each of
+    RESET_PAUSES_S; the last refusal raises GitHubError.
     """
     repo_dir = repo_dir.resolve()
     if repo_dir != paths(lab_root, test_id).repo:
         raise ValueError(f"refusing to reset {repo_dir}: not the checkout of test {test_id!r}")
     name = f"lab-{test_id}"
-    if gh.repo_exists(name):
-        gh.delete_repo(name)
-    url = gh.create_repo(name)
+    for pause in (*RESET_PAUSES_S, None):
+        try:
+            if gh.repo_exists(name):
+                gh.delete_repo(name)
+            url = gh.create_repo(name)
+            break
+        except GitHubError as exc:
+            if pause is None:
+                raise
+            print(f"note: GitHub refused to reset {name} ({first_line(str(exc), [gh.token])});"
+                  f" trying again in {pause} s", file=sys.stderr)
+            time.sleep(pause)
     shutil.rmtree(repo_dir, ignore_errors=True)
     repo_dir.mkdir(parents=True)
     configure_repo(repo_dir, url, gh.git_env(), gh.token)

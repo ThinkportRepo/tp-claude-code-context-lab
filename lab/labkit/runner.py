@@ -7,9 +7,11 @@ the goal: once the goal is reached, the optional assessment
 measured time and without follow-ups.
 
 `run_headless` drives `claude -p`; `run_interactive` hands the terminal to
-a human. Every run appends exactly one row to `<lab_root>/results.csv`, also
-when it times out, fails, or is interrupted with Ctrl+C (an interactive
-session without a prompt records nothing). A run's output lands in
+a human. Every run that starts Claude appends exactly one row to
+`<lab_root>/results.csv`, also when it times out, fails, or is interrupted
+with Ctrl+C. A run that fails before Claude starts (repo reset, plugin
+install, Ctrl+C) holds no measurement and records nothing, nor does an
+interactive session without a prompt. A run's output lands in
 `sandbox/<test>/results/<timestamp>/`: one `stream-<n>.jsonl` (stdout) and
 `stderr-<n>.txt` per `claude` process and a copy of the transcripts
 (`projects/`).
@@ -363,8 +365,15 @@ def run_headless(
         row["status"] = _status(
             failed=failed, timed_out=timed_out, goal_ok=goal_ok, denied=info["denied"]
         )
-        record(lab_root, row)
+        if streams:
+            record(lab_root, row)
+        else:
+            _not_recorded(test)
     return row
+
+
+def _not_recorded(test: config.Test) -> None:
+    print(f"{test.id}: not recorded: the run failed before Claude started", file=sys.stderr)
 
 
 def _run_in_terminal(argv: list[str], cwd: Path, env: dict[str, str]) -> int:
@@ -444,5 +453,8 @@ def run_interactive(
             row["goal_ok"] = goal_ok
             row["mcp_connected"] = ""  # no stream-json output, so no init event
             row["status"] = _status(failed=failed, timed_out=False, goal_ok=goal_ok, denied=None)
-            record(lab_root, row)
+            if ran:
+                record(lab_root, row)
+            else:
+                _not_recorded(test)
     return row
