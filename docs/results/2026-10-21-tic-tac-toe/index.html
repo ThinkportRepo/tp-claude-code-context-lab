@@ -17,6 +17,7 @@
   --axis: #c3c2b7;
   --border: rgba(11, 11, 11, 0.10);
   --series: #2a78d6;
+  --series-light: #86b6ef;
   --chip-on: #2266c4;
   --chip-on-ink: #ffffff;
   --wash: rgba(11, 11, 11, 0.04);
@@ -33,6 +34,7 @@
     --axis: #383835;
     --border: rgba(255, 255, 255, 0.10);
     --series: #3987e5;
+    --series-light: #184f95;
     --chip-on: #3987e5;
     --chip-on-ink: #0b0b0b;
     --wash: rgba(255, 255, 255, 0.05);
@@ -49,6 +51,7 @@
   --axis: #383835;
   --border: rgba(255, 255, 255, 0.10);
   --series: #3987e5;
+  --series-light: #184f95;
   --chip-on: #3987e5;
   --chip-on-ink: #0b0b0b;
   --wash: rgba(255, 255, 255, 0.05);
@@ -85,24 +88,33 @@ h2 { font-size: 15px; margin: 0; font-weight: 600; }
   color: var(--ink-2); background: transparent; border: none; text-decoration: underline; cursor: pointer;
 }
 .status { color: var(--ink-2); font-size: 13px; margin: 0 0 16px; }
-.charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+.charts { display: flex; flex-wrap: wrap; gap: 12px; }
+.charts > * { min-width: 0; }
+.card-assess { flex: 1 1 300px; }
+.card-context { flex: 2 1 520px; }
+.card-cost, .charts > .empty { flex: 1 1 100%; }
 .card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
   padding: 14px 14px 8px;
 }
 .card p { margin: 2px 0 6px; color: var(--muted); font-size: 12px; }
-.card svg { display: block; width: 100%; height: auto; overflow: visible; }
+.card svg { display: block; max-width: 100%; height: auto; overflow: visible; }
+.panels { display: flex; flex-wrap: wrap; gap: 12px; }
+.panel h3 { font-size: 13px; margin: 6px 0 0; font-weight: 600; }
 .axis-text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .group-text { fill: var(--ink-2); font-size: 12px; }
 .value-text { fill: var(--ink); font-size: 12px; font-weight: 600; }
 .halo { paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
 .sub-text { fill: var(--muted); font-size: 11px; }
 .dot { fill: var(--series); stroke: var(--surface); stroke-width: 2; fill-opacity: 0.55; }
-.dot.hover { fill-opacity: 1; }
-.median { fill: var(--ink); }
-/* Labels and the median sit over dots; let the pointer reach the dots. */
-.median, .card svg text { pointer-events: none; }
+/* Labels sit over dots; let the pointer reach the dots. */
+.card svg text { pointer-events: none; }
 .bar { fill: var(--series); }
+.start-bar { fill: var(--series-light); }
+.end-dot { fill: var(--ink); fill-opacity: 0.45; stroke: var(--surface); stroke-width: 1.5; }
+.other-dot { fill: var(--axis); }
+.median-ring { fill: none; stroke: var(--ink); stroke-width: 2; }
+.end-dot, .other-dot, .start-bar, .bar { pointer-events: none; }
 .hit { fill: transparent; cursor: default; }
 .hit:focus { outline: none; }
 .hit:focus-visible { stroke: var(--series); stroke-width: 2; }
@@ -157,7 +169,7 @@ footer a { color: inherit; }
 
   <section class="card table-card" aria-labelledby="table-title">
     <h2 id="table-title">Table</h2>
-    <p>Medians of the selected runs; growth with min–max. Goal, follow-ups and assessment count runs.</p>
+    <p>Medians of the selected runs; growth with min–max. Passed = runs whose game reached GitHub Pages and passed the assessment.</p>
     <table id="table"></table>
   </section>
 
@@ -184,26 +196,16 @@ const DIMENSIONS = [
     ["prompt-simple.md", "simple"], ["prompt-well-defined.md", "well-defined"]] },
 ];
 
-// What a chart can show. A rate counts runs; a value plots every run and its median.
+// The charts. Each takes the groups being compared and the width it has.
 const METRICS = [
-  { key: "goal", label: "Goal reached", kind: "rate",
-    of: (r) => true, hit: (r) => r.goal_ok === "True", note: "share of runs that reached the goal" },
-  { key: "followups", label: "Follow-ups", kind: "rate",
-    of: (r) => true, hit: (r) => r.turns !== "1", note: "share of runs that needed a follow-up turn" },
-  { key: "assess", label: "Assessment", kind: "rate",
-    of: (r) => r.assess_ok === "True" || r.assess_ok === "False", hit: (r) => r.assess_ok === "True",
-    note: "share of reached games that passed the assessment" },
-  { key: "start", label: "Start context", kind: "value", field: "ctx_start", unit: "tokens",
-    note: "context of the first API call; each dot is one run, the bar the median" },
-  { key: "growth", label: "Context growth", kind: "value", field: "ctx_growth", unit: "tokens",
-    note: "last minus first call; each dot is one run, the bar the median" },
-  { key: "output", label: "Output tokens", kind: "value", field: "tokens_out", unit: "tokens",
-    note: "output tokens of the run; each dot is one run, the bar the median" },
-  { key: "duration", label: "Duration", kind: "value", field: "duration_s", unit: "s",
-    note: "from turn 1 to the goal check; each dot is one run, the bar the median" },
-  { key: "cost", label: "API-equiv", kind: "value", field: "api_equiv_usd", unit: "usd",
-    note: "cost at API list prices; each dot is one run, the bar the median" },
+  { key: "assess", label: "Assessment passed",
+    note: "share of runs whose game reached GitHub Pages and passed the assessment" },
+  { key: "context", label: "Context: start and growth",
+    note: "bar: median start + median growth; dot: one run's context at its last call" },
+  { key: "cost", label: "Output tokens and API-equiv cost",
+    note: "one dot per run; the ring marks the median of the group, grey dots are the other selected runs" },
 ];
+const passed = (r) => r.assess_ok === "True";
 
 const state = { by: "model", off: new Set(), hidden: new Set() };
 let RUNS = [];
@@ -257,11 +259,6 @@ function niceMax(max) {
   const step = Math.pow(10, Math.floor(Math.log10(max)));
   for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * step >= max) return m * step;
   return 10 * step;
-}
-
-function labelOf(dimKey, value) {
-  const dim = DIMENSIONS.find((d) => d.key === dimKey);
-  return dim.values.find(([v]) => v === value)?.[1] ?? value;
 }
 
 function selectedRuns() {
@@ -360,91 +357,158 @@ function jitter(test, timestamp, width) {
   return ((h % 1000) / 1000 - 0.5) * width;
 }
 
-function chart(metric, gs) {
-  const W = 360, H = 230, left = 44, right = 8, top = 34, bottom = 30;
-  const plotW = W - left - right, plotH = H - top - bottom;
-  const band = plotW / gs.length;
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "group", "aria-label": metric.label });
-
-  let max, ticks;
-  if (metric.kind === "rate") { max = 1; ticks = [0, 0.5, 1]; }
-  else {
-    const all = gs.flatMap((g) => g.runs.map((r) => +r[metric.field]).filter((x) => !Number.isNaN(x)));
-    max = niceMax(Math.max(...all, 0));
-    ticks = [0, max / 2, max];
+// Shows the tooltip on pointer and keyboard focus for one element.
+function tip(node, value, lines) {
+  node.addEventListener("pointerenter", (e) => showTip(e, value, lines));
+  node.addEventListener("pointermove", (e) => showTip(e, value, lines));
+  node.addEventListener("pointerleave", hideTip);
+  if (node.hasAttribute("tabindex")) {
+    node.setAttribute("aria-label", `${value}, ${lines.join(", ")}`);
+    node.addEventListener("focus", (e) => showTip(e, value, lines));
+    node.addEventListener("blur", hideTip);
   }
-  const y = (v) => top + plotH - (v / max) * plotH;
+}
 
-  for (const t of ticks) {
+// A bar with a 4px rounded data end, anchored at the baseline. dir: "up" or "right".
+function barPath(x, y, w, h, dir) {
+  if (w <= 0 || h <= 0) return "";
+  if (dir === "up") {
+    const r = Math.min(4, h, w / 2);
+    return `M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h} Z`;
+  }
+  const r = Math.min(4, w, h / 2);
+  return `M${x},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h - r} Q${x + w},${y + h} ${x + w - r},${y + h} H${x} Z`;
+}
+
+function svgOf(W, H, label) {
+  return el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "group", "aria-label": label });
+}
+
+// Assessment passed: one bar per group, share of all its runs.
+function rateChart(gs, W) {
+  const H = 240, left = 44, right = 8, top = 34, bottom = 30;
+  const plotW = W - left - right, plotH = H - top - bottom, band = plotW / gs.length;
+  const svg = svgOf(W, H, "Assessment passed");
+  const y = (v) => top + plotH - v * plotH;
+  for (const t of [0, 0.5, 1]) {
     svg.append(el("line", { x1: left, x2: W - right, y1: y(t), y2: y(t),
       stroke: t === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }));
-    const text = metric.kind === "rate" ? Math.round(t * 100) + " %" : fmt(t, metric.unit, true);
-    svg.append(el("text", { x: left - 6, y: y(t) + 4, "text-anchor": "end", class: "axis-text" }, text));
+    svg.append(el("text", { x: left - 6, y: y(t) + 4, "text-anchor": "end", class: "axis-text" }, Math.round(t * 100) + " %"));
   }
-
   gs.forEach((g, i) => {
     const cx = left + band * i + band / 2;
-    svg.append(el("text", { x: cx, y: H - 10, "text-anchor": "middle", class: "group-text" }, g.label));
+    const hit = g.runs.filter(passed).length, n = g.runs.length;
+    const bw = Math.min(24, band * 0.5), y0 = y(n ? hit / n : 0);
+    const area = el("rect", { class: "hit", x: cx - band / 2 + 4, y: top, width: band - 8, height: plotH, tabindex: 0, role: "img" });
+    tip(area, pct(hit, n), [`${g.label}: ${hit} of ${n} runs passed`]);
+    svg.append(
+      el("text", { x: cx, y: H - 10, "text-anchor": "middle", class: "group-text" }, g.label),
+      el("path", { class: "bar", d: barPath(cx - bw / 2, y0, bw, top + plotH - y0, "up") }),
+      el("text", { x: cx, y: y0 - 16, "text-anchor": "middle", class: "value-text halo" }, pct(hit, n)),
+      el("text", { x: cx, y: y0 - 4, "text-anchor": "middle", class: "sub-text halo" }, `${hit}/${n}`),
+      area);
+  });
+  return svg;
+}
 
-    if (metric.kind === "rate") {
-      const runs = g.runs.filter(metric.of);
-      const hit = runs.filter(metric.hit).length;
-      const share = runs.length ? hit / runs.length : 0;
-      const bw = Math.min(24, band * 0.5), y0 = y(share), h = top + plotH - y0;
-      if (h > 0) {
-        const r = Math.min(4, h);
-        svg.append(el("path", { class: "bar", d:
-          `M${cx - bw / 2},${top + plotH} V${y0 + r} Q${cx - bw / 2},${y0} ${cx - bw / 2 + r},${y0}` +
-          ` H${cx + bw / 2 - r} Q${cx + bw / 2},${y0} ${cx + bw / 2},${y0 + r} V${top + plotH} Z` }));
-      }
-      svg.append(el("text", { x: cx, y: y0 - 16, "text-anchor": "middle", class: "value-text halo" }, pct(hit, runs.length)));
-      svg.append(el("text", { x: cx, y: y0 - 4, "text-anchor": "middle", class: "sub-text" }, `${hit}/${runs.length}`));
-      const area = el("rect", { class: "hit", x: cx - band / 2 + 4, y: top, width: band - 8, height: plotH, tabindex: 0, role: "img" });
-      const lines = [`${g.label}: ${hit} of ${runs.length} runs`, metric.note];
-      area.setAttribute("aria-label", `${pct(hit, runs.length)}, ${lines[0]}`);
-      area.addEventListener("pointermove", (e) => showTip(e, pct(hit, runs.length), lines));
-      area.addEventListener("focus", (e) => showTip(e, pct(hit, runs.length), lines));
-      area.addEventListener("pointerleave", hideTip);
-      area.addEventListener("blur", hideTip);
-      svg.append(area);
-      return;
-    }
-
-    const runs = g.runs.filter((r) => r[metric.field] !== "");
-    const values = runs.map((r) => +r[metric.field]);
-    for (const r of runs) {
-      const v = +r[metric.field];
-      const dx = jitter(r.test, r.timestamp, Math.min(band * 0.55, 70));
-      const dot = el("circle", { class: "dot", cx: cx + dx, cy: y(v), r: 4 });
-      const hitArea = el("circle", { class: "hit", cx: cx + dx, cy: y(v), r: 9 });
-      const lines = [r.test.replace(/^test-/, ""), `${r.status}, ${r.turns} turn${r.turns === "1" ? "" : "s"}`];
-      hitArea.addEventListener("pointerenter", (e) => { dot.classList.add("hover"); showTip(e, fmt(v, metric.unit), lines); });
-      hitArea.addEventListener("pointermove", (e) => showTip(e, fmt(v, metric.unit), lines));
-      hitArea.addEventListener("pointerleave", () => { dot.classList.remove("hover"); hideTip(); });
+// Context: per group a horizontal bar of median start + median growth, and every run's context at
+// its last call (start + growth of that run) as a dot, so the spread stays visible.
+function contextChart(gs, W) {
+  const rowH = 58, top = 6, bottom = 26, left = 92, right = 18;
+  const H = top + rowH * gs.length + bottom, plotW = W - left - right;
+  const svg = svgOf(W, H, "Context: start and growth");
+  const max = niceMax(Math.max(...gs.flatMap((g) => g.runs.map((r) => +r.ctx_end)), 0));
+  const x = (v) => left + (v / max) * plotW;
+  for (const t of [0, max / 2, max]) {
+    svg.append(
+      el("line", { x1: x(t), x2: x(t), y1: top, y2: H - bottom, stroke: t === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }),
+      el("text", { x: x(t), y: H - 8, "text-anchor": t === max ? "end" : "middle", class: "axis-text" }, fmt(t, "tokens")));
+  }
+  gs.forEach((g, i) => {
+    const yc = top + rowH * i + 18, bh = 16;
+    const start = median(g.runs.map((r) => +r.ctx_start));
+    const growths = g.runs.map((r) => +r.ctx_growth), growth = median(growths);
+    const ends = g.runs.map((r) => +r.ctx_end);
+    const row = el("rect", { class: "hit", x: 0, y: yc - rowH / 2 + 6, width: W, height: rowH, tabindex: 0, role: "img" });
+    tip(row, `${fmt(start, "tokens")} + ${fmt(growth, "tokens")}`, [
+      `${g.label}, medians of ${g.runs.length} runs`,
+      `start ${fmt(start, "tokens")}, growth ${fmt(growth, "tokens")} (${fmt(Math.min(...growths), "tokens")}–${fmt(Math.max(...growths), "tokens")})`,
+      `context at last call ${fmt(median(ends), "tokens")} (${fmt(Math.min(...ends), "tokens")}–${fmt(Math.max(...ends), "tokens")})`]);
+    svg.append(row,
+      el("text", { x: left - 10, y: yc + 4, "text-anchor": "end", class: "group-text" }, g.label),
+      el("rect", { class: "start-bar", x: left, y: yc - bh / 2, width: Math.max(0, x(start) - left - 1), height: bh }),
+      el("path", { class: "bar", d: barPath(x(start) + 1, yc - bh / 2, x(start + growth) - x(start) - 1, bh, "right") }));
+    const label = el("text", { x: left, y: yc + bh / 2 + 16, class: "sub-text" });
+    label.append(el("tspan", {}, "start "), el("tspan", { class: "value-text" }, fmt(start, "tokens")),
+      el("tspan", {}, "  + growth "), el("tspan", { class: "value-text" }, fmt(growth, "tokens")));
+    svg.append(label);
+    for (const r of g.runs) {
+      const v = +r.ctx_end, cy = yc + jitter(r.test, r.timestamp, 16);
+      const dot = el("circle", { class: "end-dot", cx: x(v), cy, r: 4 });
+      const hitArea = el("circle", { class: "hit", cx: x(v), cy, r: 8 });
+      tip(hitArea, fmt(v, "tokens"), [r.test.replace(/^test-/, ""),
+        `start ${fmt(+r.ctx_start, "tokens")} + growth ${fmt(+r.ctx_growth, "tokens")}`]);
       svg.append(dot, hitArea);
-    }
-    if (values.length) {
-      const m = median(values);
-      svg.append(el("rect", { class: "median", x: cx - 18, y: y(m) - 1.5, width: 36, height: 3, rx: 1.5 }));
-      svg.append(el("text", { x: cx + 22, y: y(m) + 4, class: "value-text halo" }, fmt(m, metric.unit, true)));
-      const focus = el("rect", { class: "hit", x: cx - 20, y: y(m) - 8, width: 40, height: 16, tabindex: 0,
-        role: "img", "pointer-events": "none" });
-      const lines = [`${g.label}: median of ${values.length} runs`,
-        `range ${fmt(Math.min(...values), metric.unit)} – ${fmt(Math.max(...values), metric.unit)}`];
-      focus.setAttribute("aria-label", `${fmt(m, metric.unit)}, ${lines.join(", ")}`);
-      focus.addEventListener("focus", (e) => showTip(e, fmt(m, metric.unit), lines));
-      focus.addEventListener("blur", hideTip);
-      svg.append(focus);
     }
   });
   return svg;
 }
 
+// Output tokens against API-equiv cost: one small panel per group on shared axes.
+function costChart(gs, W) {
+  const wrap = document.createElement("div");
+  wrap.className = "panels";
+  const gap = 12, cols = Math.max(1, Math.min(gs.length, Math.floor((W + gap) / (230 + gap))));
+  const PW = Math.floor((W - gap * (cols - 1)) / cols), PH = 220;
+  const left = 46, right = 12, top = 10, bottom = 38, plotW = PW - left - right, plotH = PH - top - bottom;
+  const all = gs.flatMap((g) => g.runs);
+  const xMax = niceMax(Math.max(...all.map((r) => +r.tokens_out), 0));
+  const yMax = niceMax(Math.max(...all.map((r) => +r.api_equiv_usd), 0));
+  const x = (v) => left + (v / xMax) * plotW, y = (v) => top + plotH - (v / yMax) * plotH;
+  for (const g of gs) {
+    const out = median(g.runs.map((r) => +r.tokens_out)), usd = median(g.runs.map((r) => +r.api_equiv_usd));
+    const panel = document.createElement("div");
+    panel.className = "panel";
+    panel.style.width = PW + "px";
+    const title = document.createElement("h3");
+    title.textContent = g.label;
+    const sub = document.createElement("p");
+    sub.textContent = `median ${fmt(out, "tokens")} output, ${fmt(usd, "usd")}`;
+    const svg = svgOf(PW, PH, `${g.label}: output tokens and API-equiv`);
+    for (const t of [0, xMax / 2, xMax]) {
+      svg.append(el("line", { x1: x(t), x2: x(t), y1: top, y2: top + plotH, stroke: t === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }),
+        el("text", { x: x(t), y: PH - 22, "text-anchor": t === 0 ? "start" : t === xMax ? "end" : "middle", class: "axis-text" }, fmt(t, "tokens")));
+    }
+    for (const t of [0, yMax / 2, yMax]) {
+      svg.append(el("line", { x1: left, x2: PW - right, y1: y(t), y2: y(t), stroke: t === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }),
+        el("text", { x: left - 6, y: y(t) + 4, "text-anchor": "end", class: "axis-text" }, fmt(t, "usd", true)));
+    }
+    svg.append(el("text", { x: left + plotW / 2, y: PH - 4, "text-anchor": "middle", class: "sub-text" }, "output tokens"));
+    for (const r of all) if (!g.runs.includes(r)) {
+      svg.append(el("circle", { class: "other-dot", cx: x(+r.tokens_out), cy: y(+r.api_equiv_usd), r: 2.5 }));
+    }
+    for (const r of g.runs) {
+      const cx = x(+r.tokens_out), cy = y(+r.api_equiv_usd);
+      const hitArea = el("circle", { class: "hit", cx, cy, r: 8 });
+      tip(hitArea, fmt(+r.api_equiv_usd, "usd"), [r.test.replace(/^test-/, ""), `${fmt(+r.tokens_out, "tokens")} output tokens`]);
+      svg.append(el("circle", { class: "dot", cx, cy, r: 4 }), hitArea);
+    }
+    const ring = el("circle", { class: "median-ring hit", cx: x(out), cy: y(usd), r: 8, tabindex: 0, role: "img", "pointer-events": "none" });
+    tip(ring, fmt(usd, "usd"), [`${g.label}: median of ${g.runs.length} runs`, `${fmt(out, "tokens")} output tokens`]);
+    svg.append(ring);
+    panel.append(title, sub, svg);
+    wrap.append(panel);
+  }
+  return wrap;
+}
+
+const CHARTS = { assess: rateChart, context: contextChart, cost: costChart };
+
 // ---------- table ----------
 
 function renderTable(gs, total) {
   const table = document.getElementById("table");
-  const head = ["", "n", "Goal", "Follow-ups", "Assessment", "Start", "Growth", "Output", "Duration", "API-equiv"];
+  const head = ["", "Runs", "Passed", "Start", "Growth", "Output", "API-equiv", "Duration"];
   const thead = document.createElement("thead");
   const tr = document.createElement("tr");
   for (const h of head) { const th = document.createElement("th"); th.textContent = h; th.scope = "col"; tr.append(th); }
@@ -452,17 +516,15 @@ function renderTable(gs, total) {
   const tbody = document.createElement("tbody");
   const rowOf = (label, runs) => {
     const growth = runs.map((r) => +r.ctx_growth);
-    const assessed = runs.filter(METRICS[2].of);
+    const hit = runs.filter(passed).length;
     const cells = [
       label, runs.length,
-      `${runs.filter(METRICS[0].hit).length}`,
-      `${runs.filter(METRICS[1].hit).length}`,
-      `${assessed.filter(METRICS[2].hit).length}/${assessed.length}`,
+      `${hit} (${pct(hit, runs.length)})`,
       fmt(median(runs.map((r) => +r.ctx_start)), "tokens"),
       `${fmt(median(growth), "tokens")} (${fmt(Math.min(...growth), "tokens")}–${fmt(Math.max(...growth), "tokens")})`,
       fmt(median(runs.map((r) => +r.tokens_out)), "tokens"),
-      fmt(median(runs.map((r) => +r.duration_s)), "s"),
       fmt(median(runs.map((r) => +r.api_equiv_usd)), "usd"),
+      fmt(median(runs.map((r) => +r.duration_s)), "s"),
     ];
     const row = document.createElement("tr");
     cells.forEach((c, i) => {
@@ -498,16 +560,23 @@ function update() {
     return;
   }
   const shown = METRICS.filter((m) => !state.hidden.has(m.key));
-  charts.replaceChildren(...shown.map((m) => {
+  const cards = shown.map((m) => {
     const card = document.createElement("article");
-    card.className = "card";
+    card.className = "card card-" + m.key;
     const h = document.createElement("h2");
     h.textContent = m.label;
     const p = document.createElement("p");
     p.textContent = m.note;
-    card.append(h, p, chart(m, gs));
+    card.append(h, p);
     return card;
-  }));
+  });
+  charts.replaceChildren(...cards);
+  // Charts are drawn at the width their card got, so text keeps its size on any screen.
+  shown.forEach((m, i) => {
+    const style = getComputedStyle(cards[i]);
+    const width = cards[i].clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    cards[i].append(CHARTS[m.key](gs, Math.floor(width)));
+  });
   if (!shown.length) {
     const empty = document.createElement("div");
     empty.className = "card empty";
@@ -535,6 +604,12 @@ document.getElementById("reset").addEventListener("click", () => {
   state.off.clear();
   state.hidden.clear();
   update();
+});
+
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (RUNS.length) update(); }, 150);
 });
 
 fetch("results.csv")
