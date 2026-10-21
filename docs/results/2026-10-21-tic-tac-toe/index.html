@@ -12,12 +12,12 @@
   --surface: #fcfcfb;
   --ink: #0b0b0b;
   --ink-2: #52514e;
-  --muted: #898781;
+  --muted: #6f6e69;
   --grid: #e1e0d9;
   --axis: #c3c2b7;
   --border: rgba(11, 11, 11, 0.10);
   --series: #2a78d6;
-  --chip-on: #2a78d6;
+  --chip-on: #2266c4;
   --chip-on-ink: #ffffff;
   --wash: rgba(11, 11, 11, 0.04);
 }
@@ -100,6 +100,8 @@ h2 { font-size: 15px; margin: 0; font-weight: 600; }
 .dot { fill: var(--series); stroke: var(--surface); stroke-width: 2; fill-opacity: 0.55; }
 .dot.hover { fill-opacity: 1; }
 .median { fill: var(--ink); }
+/* Labels and the median sit over dots; let the pointer reach the dots. */
+.median, .card svg text { pointer-events: none; }
 .bar { fill: var(--series); }
 .hit { fill: transparent; cursor: default; }
 .hit:focus { outline: none; }
@@ -235,10 +237,16 @@ const median = (xs) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
+// Rounds .5 to the even neighbour, as Python's round() in the README tables.
+function roundHalfEven(x) {
+  const r = Math.round(x);
+  return Math.abs(x % 1) === 0.5 && r % 2 ? r - 1 : r;
+}
+
 // short: chart labels, which have less room than the table.
 function fmt(value, unit, short) {
   if (unit === "tokens") return value >= 1000 ? (value / 1000).toFixed(1) + "k" : String(Math.round(value));
-  if (unit === "s") return Math.round(value) + " s";
+  if (unit === "s") return roundHalfEven(value) + " s";
   if (unit === "usd") return "$" + value.toFixed(short && (value >= 0.1 || value === 0) ? 2 : 3);
   return String(value);
 }
@@ -281,6 +289,9 @@ function chip(label, pressed, onClick) {
 }
 
 function renderControls() {
+  // The chips are rebuilt; keep focus on the same position for keyboard users.
+  const chips = () => [...document.querySelectorAll(".controls .chip")];
+  const focused = chips().indexOf(document.activeElement);
   const by = document.getElementById("by");
   by.replaceChildren(...DIMENSIONS.map((d) => chip(d.label, state.by === d.key, () => {
     state.by = d.key; update();
@@ -308,6 +319,7 @@ function renderControls() {
     state.hidden.has(m.key) ? state.hidden.delete(m.key) : state.hidden.add(m.key);
     update();
   })));
+  if (focused >= 0) chips()[focused].focus();
 }
 
 // ---------- charts ----------
@@ -352,7 +364,7 @@ function chart(metric, gs) {
   const W = 360, H = 230, left = 44, right = 8, top = 34, bottom = 30;
   const plotW = W - left - right, plotH = H - top - bottom;
   const band = plotW / gs.length;
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": metric.label });
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "group", "aria-label": metric.label });
 
   let max, ticks;
   if (metric.kind === "rate") { max = 1; ticks = [0, 0.5, 1]; }
@@ -387,8 +399,9 @@ function chart(metric, gs) {
       }
       svg.append(el("text", { x: cx, y: y0 - 16, "text-anchor": "middle", class: "value-text halo" }, pct(hit, runs.length)));
       svg.append(el("text", { x: cx, y: y0 - 4, "text-anchor": "middle", class: "sub-text" }, `${hit}/${runs.length}`));
-      const area = el("rect", { class: "hit", x: cx - band / 2 + 4, y: top, width: band - 8, height: plotH, tabindex: 0 });
+      const area = el("rect", { class: "hit", x: cx - band / 2 + 4, y: top, width: band - 8, height: plotH, tabindex: 0, role: "img" });
       const lines = [`${g.label}: ${hit} of ${runs.length} runs`, metric.note];
+      area.setAttribute("aria-label", `${pct(hit, runs.length)}, ${lines[0]}`);
       area.addEventListener("pointermove", (e) => showTip(e, pct(hit, runs.length), lines));
       area.addEventListener("focus", (e) => showTip(e, pct(hit, runs.length), lines));
       area.addEventListener("pointerleave", hideTip);
@@ -414,9 +427,11 @@ function chart(metric, gs) {
       const m = median(values);
       svg.append(el("rect", { class: "median", x: cx - 18, y: y(m) - 1.5, width: 36, height: 3, rx: 1.5 }));
       svg.append(el("text", { x: cx + 22, y: y(m) + 4, class: "value-text halo" }, fmt(m, metric.unit, true)));
-      const focus = el("rect", { class: "hit", x: cx - 20, y: y(m) - 8, width: 40, height: 16, tabindex: 0 });
+      const focus = el("rect", { class: "hit", x: cx - 20, y: y(m) - 8, width: 40, height: 16, tabindex: 0,
+        role: "img", "pointer-events": "none" });
       const lines = [`${g.label}: median of ${values.length} runs`,
         `range ${fmt(Math.min(...values), metric.unit)} – ${fmt(Math.max(...values), metric.unit)}`];
+      focus.setAttribute("aria-label", `${fmt(m, metric.unit)}, ${lines.join(", ")}`);
       focus.addEventListener("focus", (e) => showTip(e, fmt(m, metric.unit), lines));
       focus.addEventListener("blur", hideTip);
       svg.append(focus);
