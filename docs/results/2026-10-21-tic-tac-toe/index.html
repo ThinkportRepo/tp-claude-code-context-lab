@@ -374,15 +374,11 @@ function tip(node, value, lines) {
   }
 }
 
-// A bar with a 4px rounded data end, anchored at the baseline. dir: "up" or "right".
-function barPath(x, y, w, h, dir) {
+// An upright bar with a 4px rounded top, anchored at the baseline.
+function barPath(x, y, w, h) {
   if (w <= 0 || h <= 0) return "";
-  if (dir === "up") {
-    const r = Math.min(4, h, w / 2);
-    return `M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h} Z`;
-  }
-  const r = Math.min(4, w, h / 2);
-  return `M${x},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h - r} Q${x + w},${y + h} ${x + w - r},${y + h} H${x} Z`;
+  const r = Math.min(4, h, w / 2);
+  return `M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h} Z`;
 }
 
 function svgOf(W, H, label) {
@@ -408,7 +404,7 @@ function rateChart(gs, W) {
     tip(area, pct(hit, n), [`${g.label}: ${hit} of ${n} runs passed`]);
     svg.append(
       el("text", { x: cx, y: H - 10, "text-anchor": "middle", class: "group-text" }, g.label),
-      el("path", { class: "bar", d: barPath(cx - bw / 2, y0, bw, top + plotH - y0, "up") }),
+      el("path", { class: "bar", d: barPath(cx - bw / 2, y0, bw, top + plotH - y0) }),
       el("text", { x: cx, y: y0 - 16, "text-anchor": "middle", class: "value-text halo" }, pct(hit, n)),
       el("text", { x: cx, y: y0 - 4, "text-anchor": "middle", class: "sub-text halo" }, `${hit}/${n}`),
       area);
@@ -439,7 +435,7 @@ function contextChart(gs, W) {
     svg.append(
       el("text", { x: left + band * i + band / 2, y: H - 10, "text-anchor": "middle", class: "group-text" }, g.label),
       el("rect", { class: "start-bar", x: bx, y: y(start), width: bw, height: y(0) - y(start) }),
-      el("path", { class: "bar", d: barPath(bx, y(start + growth), bw, y(start) - y(start + growth) - 2, "up") }),
+      el("path", { class: "bar", d: barPath(bx, y(start + growth), bw, y(start) - y(start + growth) - 2) }),
       el("text", { x: cx, y: y(start + growth) - 6, "text-anchor": "middle", class: "value-text halo" }, fmt(start + growth, "tokens")),
       el("text", { x: bx + bw + 6, y: (y(start) + y(start + growth)) / 2 + 4, class: "sub-text halo" }, "+" + fmt(growth, "tokens")),
       el("text", { x: bx + bw + 6, y: (y(0) + y(start)) / 2 + 4, class: "sub-text halo" }, fmt(start, "tokens")),
@@ -451,7 +447,8 @@ function contextChart(gs, W) {
 // One value per run: every run as a dot, the bar marks the median of the group.
 function valueChart(field, unit, label) {
   return (gs, W) => {
-    const H = 240, left = 48, right = 8, top = 24, bottom = 30;
+    // right leaves room for the last group's median label.
+    const H = 240, left = 48, right = 24, top = 24, bottom = 30;
     const plotW = W - left - right, plotH = H - top - bottom, band = plotW / gs.length;
     const svg = svgOf(W, H, label);
     const max = niceMax(Math.max(...gs.flatMap((g) => g.runs.map((r) => +r[field])), 0));
