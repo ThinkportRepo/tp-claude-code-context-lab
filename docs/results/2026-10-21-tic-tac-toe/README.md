@@ -16,6 +16,9 @@ the prompts [prompt-simple.md](prompt-simple.md) and
 [prompt-assessment.js](prompt-assessment.js), and the test list
 [matrix.conf](matrix.conf).
 
+Charts with filters: [index.html](index.html), served by GitHub Pages at
+<https://thinkportrepo.github.io/tp-claude-code-context-lab/results/2026-10-21-tic-tac-toe/>.
+
 ## Setup
 
 - Task: build the game in the `xyz` checkout, publish it with GitHub Pages
