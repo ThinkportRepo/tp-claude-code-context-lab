@@ -466,7 +466,7 @@ class Prepare(unittest.TestCase):
         steps = [
             "organization", "python3 lab.py tokens claude", "LAB_GH_ORG",
             "python3 lab.py tokens github ", "python3 lab.py tokens github --check",
-            "python3 lab.py setup", "python3 lab.py run test1", "python3 lab.py report",
+            "python3 lab.py setup", "python3 lab.py run <test>", "python3 lab.py report",
             "python3 lab.py teardown --secrets",
         ]  # fmt: skip
         positions = [text.find(step) for step in steps]
