@@ -202,7 +202,7 @@ const METRICS = [
   { key: "assess", label: "Assessment passed",
     note: "share of runs whose game reached GitHub Pages and passed the assessment" },
   { key: "context", label: "Context: start and growth",
-    note: "average per run; start + growth = context at the last call",
+    note: "median start and median growth per run, as in the table",
     legend: [["start", "start"], ["growth", "growth"]] },
   { key: "output", label: "Output tokens",
     note: "output tokens of the run; each dot is one run, the bar the median" },
@@ -237,7 +237,6 @@ function parseCsv(text) {
   return body.map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
 }
 
-const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
 const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
   const m = s.length >> 1;
@@ -412,14 +411,14 @@ function rateChart(gs, W) {
   return svg;
 }
 
-// Context: per group an upright bar of average start + average growth. Averages add up, so the
-// top of the bar is the average context at the last call.
+// Context: per group an upright bar of median start + median growth, the values of the table.
+// Medians do not add up, so the bar has no total; the tooltip gives the median at the last call.
 function contextChart(gs, W) {
   const H = 260, left = 44, right = 8, top = 24, bottom = 30;
   const plotW = W - left - right, plotH = H - top - bottom, band = plotW / gs.length;
   const svg = svgOf(W, H, "Context: start and growth");
-  const avgs = gs.map((g) => ({ start: mean(g.runs.map((r) => +r.ctx_start)), growth: mean(g.runs.map((r) => +r.ctx_growth)) }));
-  const max = niceMax(Math.max(...avgs.map((a) => a.start + a.growth), 0));
+  const meds = gs.map((g) => ({ start: median(g.runs.map((r) => +r.ctx_start)), growth: median(g.runs.map((r) => +r.ctx_growth)) }));
+  const max = niceMax(Math.max(...meds.map((m) => m.start + m.growth), 0));
   const y = (v) => top + plotH - (v / max) * plotH;
   for (const t of [0, max / 2, max]) {
     svg.append(el("line", { x1: left, x2: W - right, y1: y(t), y2: y(t),
@@ -427,18 +426,18 @@ function contextChart(gs, W) {
     svg.append(el("text", { x: left - 6, y: y(t) + 4, "text-anchor": "end", class: "axis-text" }, fmt(t, "tokens", true)));
   }
   gs.forEach((g, i) => {
-    const { start, growth } = avgs[i];
+    const { start, growth } = meds[i];
     const bw = Math.min(24, band * 0.3), cx = left + band * i + band / 2 - 12, bx = cx - bw / 2;
     const area = el("rect", { class: "hit", x: left + band * i + 4, y: top, width: band - 8, height: plotH, tabindex: 0, role: "img" });
-    tip(area, fmt(start + growth, "tokens"), [`${g.label}: average of ${g.runs.length} runs`,
-      `start ${fmt(start, "tokens")} + growth ${fmt(growth, "tokens")}`]);
+    tip(area, `${fmt(start, "tokens")} + ${fmt(growth, "tokens")}`, [`${g.label}: medians of ${g.runs.length} runs`,
+      `start ${fmt(start, "tokens")}, growth ${fmt(growth, "tokens")}`,
+      `context at last call ${fmt(median(g.runs.map((r) => +r.ctx_end)), "tokens")}`]);
     svg.append(
       el("text", { x: left + band * i + band / 2, y: H - 10, "text-anchor": "middle", class: "group-text" }, g.label),
       el("rect", { class: "start-bar", x: bx, y: y(start), width: bw, height: y(0) - y(start) }),
       el("path", { class: "bar", d: barPath(bx, y(start + growth), bw, y(start) - y(start + growth) - 2) }),
-      el("text", { x: cx, y: y(start + growth) - 6, "text-anchor": "middle", class: "value-text halo" }, fmt(start + growth, "tokens")),
-      el("text", { x: bx + bw + 6, y: (y(start) + y(start + growth)) / 2 + 4, class: "sub-text halo" }, "+" + fmt(growth, "tokens")),
-      el("text", { x: bx + bw + 6, y: (y(0) + y(start)) / 2 + 4, class: "sub-text halo" }, fmt(start, "tokens")),
+      el("text", { x: bx + bw + 6, y: (y(start) + y(start + growth)) / 2 + 4, class: "value-text halo" }, "+" + fmt(growth, "tokens")),
+      el("text", { x: bx + bw + 6, y: (y(0) + y(start)) / 2 + 4, class: "value-text halo" }, fmt(start, "tokens")),
       area);
   });
   return svg;
