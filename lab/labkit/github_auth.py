@@ -65,7 +65,10 @@ def pat_expiry(now: datetime, local: tzinfo | None = None) -> datetime:
     token created at 08:02 local time stopped at midnight, not 24 h later.
     """
     created = now.astimezone(local)
-    midnight = datetime.combine(created.date() + timedelta(days=1), time.min, tzinfo=created.tzinfo)
+    next_day = datetime.combine(created.date() + timedelta(days=1), time.min)
+    # A naive time's astimezone() takes the machine's offset at that moment,
+    # so a night when the clocks change gets the right midnight.
+    midnight = next_day.replace(tzinfo=local) if local else next_day.astimezone()
     return midnight.astimezone(timezone.utc)
 
 

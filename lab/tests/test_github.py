@@ -7,6 +7,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import urllib.parse
 from datetime import datetime, timedelta, timezone
@@ -18,9 +19,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from labkit import env, github, github_auth, tokens  # noqa: E402
 
 
-
 # A fixed +02:00 zone (Central European Summer Time) for expiry tests.
 CEST = timezone(timedelta(hours=2))
+
 
 class TempDirCase(unittest.TestCase):
     def setUp(self):
@@ -149,6 +150,20 @@ class PersonalAccessToken(TempDirCase):
         ):
             with self.subTest(now=now):
                 self.assertEqual(github_auth.pat_expiry(now, local=CEST), expected)
+
+    def test_expiry_in_the_machine_zone_follows_daylight_saving(self):
+        # The machine's zone, as in production; the clocks go forward on 2027-03-28 at 02:00.
+        with mock.patch.dict(os.environ, {"TZ": "Europe/Berlin"}):
+            time.tzset()
+            try:
+                summer = github_auth.pat_expiry(datetime(2026, 10, 20, 6, 2, tzinfo=timezone.utc))
+                switch = github_auth.pat_expiry(datetime(2027, 3, 27, 23, 30, tzinfo=timezone.utc))
+            finally:
+                os.environ.pop("TZ", None)
+        time.tzset()
+        self.assertEqual(summer, datetime(2026, 10, 20, 22, 0, tzinfo=timezone.utc))
+        # Created 00:30 CET; the next midnight is in CEST: 22:00 UTC, not 23:00.
+        self.assertEqual(switch, datetime(2027, 3, 28, 22, 0, tzinfo=timezone.utc))
 
     def test_create_pat_prints_checklist_before_prompt(self):
         events = []
