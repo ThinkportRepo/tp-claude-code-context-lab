@@ -10,14 +10,13 @@ import secrets
 import sys
 import urllib.parse
 import webbrowser
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
 
 from . import env
 
 _PAT_FORM_URL = "https://github.com/settings/personal-access-tokens/new"
 _PAT_PREFIX = "github_pat_"
-_PAT_TTL = timedelta(days=1)
 # What the lab needs: create/delete repos, push, publish Pages. Workflows is
 # needed because GitHub rejects pushes touching .github/workflows/* without it,
 # and a run may legitimately deploy Pages through an Actions workflow.
@@ -58,9 +57,21 @@ def pat_url(org: str, suffix: str | None = None) -> str:
     return f"{_PAT_FORM_URL}?{urllib.parse.urlencode(params)}"
 
 
-def store_pat(env_file: Path, token: str, now: datetime) -> None:
-    """Store a personal access token and its 24-hour expiry in env_file."""
-    expires = now.astimezone(timezone.utc) + _PAT_TTL
+def pat_expiry(now: datetime, local: tzinfo | None = None) -> datetime:
+    """When a 1-day token created at `now` stops working, in UTC.
+
+    GitHub sets a date, not a duration, and the token stops at the start of
+    that date in the creator's time zone (`local`, else this machine's): a
+    token created at 08:02 local time stopped at midnight, not 24 h later.
+    """
+    created = now.astimezone(local)
+    midnight = datetime.combine(created.date() + timedelta(days=1), time.min, tzinfo=created.tzinfo)
+    return midnight.astimezone(timezone.utc)
+
+
+def store_pat(env_file: Path, token: str, now: datetime, local: tzinfo | None = None) -> None:
+    """Store a personal access token and its expiry (pat_expiry) in env_file."""
+    expires = pat_expiry(now, local)
     env.upsert(env_file, "GH_TOKEN", token)
     env.upsert(env_file, "GH_TOKEN_EXPIRES_AT", expires.isoformat())
 
@@ -81,12 +92,14 @@ def _form_checklist(org: str) -> list[str]:
     ]
 
 
-def create_pat(env_file: Path, org: str, now: datetime, suffix: str | None = None) -> int:
+def create_pat(
+    env_file: Path, org: str, now: datetime, suffix: str | None = None, local: tzinfo | None = None
+) -> int:
     """Guide the user through creating a fine-grained PAT and store it.
 
     The form is pre-filled by pat_url; the token is pasted without echo.
     """
-    print(f"Creating a fine-grained token for {org} (valid for 1 day).")
+    print(f"Creating a fine-grained token for {org} (valid until midnight local time).")
     print("warning: GitHub shows the new token on the page; don't share or record your screen.")
     open_url(pat_url(org, suffix))
     print("\nCheck the form against this list, then click Generate token:")
@@ -100,8 +113,8 @@ def create_pat(env_file: Path, org: str, now: datetime, suffix: str | None = Non
         print(f"That is not a fine-grained token: it must start with {_PAT_PREFIX}. Nothing was stored.",
               file=sys.stderr)
         return 1
-    store_pat(env_file, token, now)
-    expires = now.astimezone(timezone.utc) + _PAT_TTL
+    store_pat(env_file, token, now, local)
+    expires = pat_expiry(now, local)
     print(f"Stored GH_TOKEN={env.mask(token)} in {env_file}")
     print(f"Expires at {expires.isoformat()}")
     return 0

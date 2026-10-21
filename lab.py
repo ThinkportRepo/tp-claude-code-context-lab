@@ -6,7 +6,7 @@ First run, in this order:
   1. Create a new, empty GitHub organization in which you are an admin.
   2. python3 lab.py tokens claude          create the Claude token, store it in .env
   3. Set LAB_GH_ORG=<organization> in .env by hand (see .env.example).
-  4. python3 lab.py tokens github          create a fine-grained GitHub token (1 day), store it
+  4. python3 lab.py tokens github          create a fine-grained GitHub token (until midnight), store it
   5. python3 lab.py tokens github --check  create, push, publish and delete a test repo
   6. python3 lab.py setup                  check GitHub access and create sandbox dirs
   7. python3 lab.py run test1              run one test headless, record it in results.csv
@@ -388,7 +388,7 @@ def main() -> int:
         type=Path,
         help="CLAUDE_CONFIG_DIR to run setup-token in (default: a throwaway dir)",
     )
-    github_cmd = tok_sub.add_parser("github", help="create a fine-grained GitHub token (valid 1 day)")
+    github_cmd = tok_sub.add_parser("github", help="create a fine-grained GitHub token (valid until midnight)")
     github_cmd.add_argument(
         "--check", action="store_true", help="create, push, publish and delete a test repo"
     )
