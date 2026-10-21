@@ -1,0 +1,4 @@
+# One line per follow-up turn in headless runs; the same for every profile
+# and every scenario, so no line may refer to a specific task or goal.
+Go with your recommendation for every open question and continue without asking.
+Continue without asking until the task is complete as you understand it, and stop only when you are satisfied with your work.
