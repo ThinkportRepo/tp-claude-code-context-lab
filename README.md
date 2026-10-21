@@ -38,7 +38,7 @@ Run the commands from the repository root, one step at a time.
    LAB_GH_ORG=<organization>
    ```
 
-3. Create a fine-grained GitHub token (valid 1 day) and store it:
+3. Create a fine-grained GitHub token (valid until midnight local time) and store it:
 
    ```sh
    python3 lab.py tokens github

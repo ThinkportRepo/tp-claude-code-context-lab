@@ -8,8 +8,9 @@ The lab works with two credentials:
   `python3 lab.py tokens claude`. It is valid for one year; the lifetime
   cannot be shortened.
 - **A fine-grained GitHub personal access token** (`GH_TOKEN`), created by
-  `python3 lab.py tokens github`. It is valid for one day and limited to
-  the lab's GitHub organization.
+  `python3 lab.py tokens github`. It expires at midnight local time on the
+  day it is created (GitHub's "1 day" setting) and is limited to the lab's
+  GitHub organization.
 
 Both are stored only in `.env`, which the lab writes with mode 600 and
 which git ignores, and in the environment of the child processes that need

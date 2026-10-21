@@ -7,15 +7,20 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from labkit import env, github, github_auth, tokens  # noqa: E402
+
+
+# A fixed +02:00 zone (Central European Summer Time) for expiry tests.
+CEST = timezone(timedelta(hours=2))
 
 
 class TempDirCase(unittest.TestCase):
@@ -105,12 +110,14 @@ class PersonalAccessToken(TempDirCase):
         self.assertRegex(name(), r"^Claude Code Context Lab [0-9a-f]{4}$")
         self.assertGreater(len({name() for _ in range(20)}), 1)
 
-    def test_store_pat_writes_token_and_24h_expiry(self):
+    def test_store_pat_writes_token_and_expiry_at_local_midnight(self):
+        # A 1-day token ends at the start of the next local day, not 24 h after creation:
+        # 08:00 UTC is 10:00 at +02:00, so it expires at 00:00 +02:00, 22:00 UTC the same day.
         now = datetime(2026, 10, 12, 8, 0, tzinfo=timezone.utc)
-        github_auth.store_pat(self.path, "github_pat_FAKE", now)
+        github_auth.store_pat(self.path, "github_pat_FAKE", now, local=CEST)
         self.assertEqual(
             self.path.read_text(),
-            "GH_TOKEN=github_pat_FAKE\nGH_TOKEN_EXPIRES_AT=2026-10-13T08:00:00+00:00\n",
+            "GH_TOKEN=github_pat_FAKE\nGH_TOKEN_EXPIRES_AT=2026-10-12T22:00:00+00:00\n",
         )
         self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
 
@@ -120,7 +127,7 @@ class PersonalAccessToken(TempDirCase):
              mock.patch.object(github_auth.getpass, "getpass", return_value=typed) as ask, \
              contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             rc = github_auth.create_pat(
-                self.path, "org1", datetime(2026, 10, 12, 8, 0, tzinfo=timezone.utc), suffix="3f9a"
+                self.path, "org1", datetime(2026, 10, 12, 8, 0, tzinfo=timezone.utc), suffix="3f9a", local=CEST
             )
         open_url.assert_called_once_with(github_auth.pat_url("org1", suffix="3f9a"))
         ask.assert_called_once()
@@ -133,7 +140,27 @@ class PersonalAccessToken(TempDirCase):
         self.assertIn(f"GH_TOKEN={token}\n", self.path.read_text())
         self.assertNotIn(token, out)
         self.assertIn(env.mask(token), out)
-        self.assertIn("2026-10-13T08:00:00+00:00", out)
+        self.assertIn("2026-10-12T22:00:00+00:00", out)
+
+    def test_expiry_is_the_next_local_midnight(self):
+        for now, expected in (
+            (datetime(2026, 10, 20, 6, 2, tzinfo=timezone.utc), datetime(2026, 10, 20, 22, 0, tzinfo=timezone.utc)),
+            (datetime(2026, 10, 20, 21, 30, tzinfo=timezone.utc), datetime(2026, 10, 20, 22, 0, tzinfo=timezone.utc)),
+            (datetime(2026, 10, 20, 22, 30, tzinfo=timezone.utc), datetime(2026, 10, 21, 22, 0, tzinfo=timezone.utc)),
+        ):
+            with self.subTest(now=now):
+                self.assertEqual(github_auth.pat_expiry(now, local=CEST), expected)
+
+    def test_expiry_in_the_machine_zone_follows_daylight_saving(self):
+        # The machine's zone, as in production; the clocks go forward on 2027-03-28 at 02:00.
+        self.addCleanup(time.tzset)  # runs after patch.dict has restored TZ, also on an error
+        with mock.patch.dict(os.environ, {"TZ": "Europe/Berlin"}):
+            time.tzset()
+            summer = github_auth.pat_expiry(datetime(2026, 10, 20, 6, 2, tzinfo=timezone.utc))
+            switch = github_auth.pat_expiry(datetime(2027, 3, 27, 23, 30, tzinfo=timezone.utc))
+        self.assertEqual(summer, datetime(2026, 10, 20, 22, 0, tzinfo=timezone.utc))
+        # Created 00:30 CET; the next midnight is in CEST: 22:00 UTC, not 23:00.
+        self.assertEqual(switch, datetime(2027, 3, 28, 22, 0, tzinfo=timezone.utc))
 
     def test_create_pat_prints_checklist_before_prompt(self):
         events = []
