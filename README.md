@@ -56,10 +56,11 @@ Run the commands from the repository root, one step at a time.
    python3 lab.py setup
    ```
 
-6. Run one test headless and record it in `results.csv`:
+6. Run one test headless and record it in `results.csv`; `<test>` is a test
+   id from `lab/matrix.conf`:
 
    ```sh
-   python3 lab.py run test1
+   python3 lab.py run <test>
    ```
 
 7. Summarize `results.csv`:
@@ -71,7 +72,7 @@ Run the commands from the repository root, one step at a time.
 8. Optional: run a test interactively in this terminal (`/exit` ends it):
 
    ```sh
-   python3 lab.py session test3
+   python3 lab.py session <test>
    ```
 
 9. When you are done: delete the lab repos and sandbox, revoke the tokens:

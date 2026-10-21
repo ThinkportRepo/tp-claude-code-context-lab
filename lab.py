@@ -9,7 +9,7 @@ First run, in this order:
   4. python3 lab.py tokens github          create a fine-grained GitHub token (until midnight), store it
   5. python3 lab.py tokens github --check  create, push, publish and delete a test repo
   6. python3 lab.py setup                  check GitHub access and create sandbox dirs
-  7. python3 lab.py run test1              run one test headless, record it in results.csv
+  7. python3 lab.py run <test>             run one test from lab/matrix.conf headless, record it in results.csv
   8. python3 lab.py report                 summarize results.csv
   9. python3 lab.py teardown --secrets     delete lab repos and sandbox, revoke the tokens
 
