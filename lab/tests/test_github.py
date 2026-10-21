@@ -153,14 +153,11 @@ class PersonalAccessToken(TempDirCase):
 
     def test_expiry_in_the_machine_zone_follows_daylight_saving(self):
         # The machine's zone, as in production; the clocks go forward on 2027-03-28 at 02:00.
+        self.addCleanup(time.tzset)  # runs after patch.dict has restored TZ, also on an error
         with mock.patch.dict(os.environ, {"TZ": "Europe/Berlin"}):
             time.tzset()
-            try:
-                summer = github_auth.pat_expiry(datetime(2026, 10, 20, 6, 2, tzinfo=timezone.utc))
-                switch = github_auth.pat_expiry(datetime(2027, 3, 27, 23, 30, tzinfo=timezone.utc))
-            finally:
-                os.environ.pop("TZ", None)
-        time.tzset()
+            summer = github_auth.pat_expiry(datetime(2026, 10, 20, 6, 2, tzinfo=timezone.utc))
+            switch = github_auth.pat_expiry(datetime(2027, 3, 27, 23, 30, tzinfo=timezone.utc))
         self.assertEqual(summer, datetime(2026, 10, 20, 22, 0, tzinfo=timezone.utc))
         # Created 00:30 CET; the next midnight is in CEST: 22:00 UTC, not 23:00.
         self.assertEqual(switch, datetime(2027, 3, 28, 22, 0, tzinfo=timezone.utc))

@@ -68,7 +68,7 @@ def pat_expiry(now: datetime, local: tzinfo | None = None) -> datetime:
     next_day = datetime.combine(created.date() + timedelta(days=1), time.min)
     # A naive time's astimezone() takes the machine's offset at that moment,
     # so a night when the clocks change gets the right midnight.
-    midnight = next_day.replace(tzinfo=local) if local else next_day.astimezone()
+    midnight = next_day.replace(tzinfo=local) if local is not None else next_day.astimezone()
     return midnight.astimezone(timezone.utc)
 
 
