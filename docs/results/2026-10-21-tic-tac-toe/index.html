@@ -95,9 +95,11 @@ h2 { font-size: 15px; margin: 0; font-weight: 600; }
 .card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
   padding: 14px 14px 8px;
+  /* Charts sit at the bottom, so cards in one row share the baseline of their charts. */
+  display: flex; flex-direction: column;
 }
 .card p { margin: 2px 0 6px; color: var(--muted); font-size: 12px; }
-.card svg { display: block; max-width: 100%; height: auto; overflow: visible; }
+.card svg { display: block; max-width: 100%; height: auto; overflow: visible; margin-top: auto; }
 .axis-text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .group-text { fill: var(--ink-2); font-size: 12px; }
 .value-text { fill: var(--ink); font-size: 12px; font-weight: 600; }
@@ -389,7 +391,7 @@ function svgOf(W, H, label) {
 
 // Assessment passed: one bar per group, share of all its runs.
 function rateChart(gs, W) {
-  const H = 240, left = 44, right = 8, top = 34, bottom = 30;
+  const H = 260, left = 44, right = 8, top = 34, bottom = 30;
   const plotW = W - left - right, plotH = H - top - bottom, band = plotW / gs.length;
   const svg = svgOf(W, H, "Assessment passed");
   const y = (v) => top + plotH - v * plotH;
